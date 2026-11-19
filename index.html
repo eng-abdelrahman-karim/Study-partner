@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Study Partner | منبه التسليمات والكويزات والمشاريع</title>
   <style>
     :root {
@@ -34,6 +34,12 @@
       margin: 0;
       padding: 0;
       font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html, body {
+      touch-action: manipulation;
+      overscroll-behavior-y: contain;
     }
 
     body {
@@ -139,33 +145,82 @@
       border: none;
     }
 
-    .ringtone-bar {
+    .ringtone-panel {
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 14px 18px;
+      border-radius: 18px;
+      padding: 16px 18px;
       margin-bottom: 18px;
+    }
+
+    .ringtone-toggle-btn {
+      width: 100%;
       display: flex;
-      flex-wrap: wrap;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
+      gap: 10px;
+      background: var(--card-2);
+      padding: 12px 16px;
+      border-radius: 14px;
+      font-size: 1rem;
     }
 
-    .ringtone-controls {
+    .ringtone-drawer {
+      display: none;
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+      gap: 12px;
+      flex-direction: column;
+    }
+
+    .ringtone-drawer.open {
+      display: flex;
+    }
+
+    .tone-slot {
+      background: var(--card-2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .tone-slot-header {
       display: flex;
       flex-wrap: wrap;
+      justify-content: space-between;
       align-items: center;
-      gap: 8px;
-      flex: 1;
-      min-width: 240px;
+      gap: 6px;
     }
 
-    .ringtone-controls select {
+    .tone-slot-title {
+      font-weight: 700;
+      font-size: 0.96rem;
+    }
+
+    .tone-file-badge {
+      font-size: 0.8rem;
+      color: var(--success);
+      background: rgba(16, 185, 129, 0.12);
+      padding: 3px 9px;
+      border-radius: 999px;
+    }
+
+    .tone-controls-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .tone-controls-row select {
       flex: 1;
-      min-width: 190px;
+      min-width: 180px;
       padding: 9px 12px;
-      background: var(--card-2);
+      background: var(--card);
       color: var(--text);
     }
 
@@ -332,7 +387,7 @@
     .alarm-modal {
       position: fixed;
       inset: 0;
-      background: rgba(2, 6, 23, 0.85);
+      background: rgba(2, 6, 23, 0.9);
       display: none;
       align-items: center;
       justify-content: center;
@@ -392,18 +447,68 @@
       </div>
     </header>
 
-    <div class="ringtone-bar">
-      <div>
-        <strong>نغمة التنبيه المختارة:</strong>
-        <span class="meta" style="display:block;margin:0;">اختر النغمة المناسبة واستمع إليها قبل الحفظ</span>
-      </div>
-      <div class="ringtone-controls">
-        <select id="ringtoneSelect" onchange="changeRingtone()">
-          <option value="classic">نغمة كلاسيكية متقطعة</option>
-          <option value="soft">نغمة هادية للبدء المبكر</option>
-          <option value="urgent">نغمة قوية ليوم الـ Deadline</option>
-        </select>
-        <button type="button" onclick="previewRingtone()">اختبار النغمة</button>
+    <div class="ringtone-panel">
+      <button type="button" class="ringtone-toggle-btn" onclick="toggleRingtoneDrawer()">
+        <span><strong>اختيار نغمة الإشعارات والرنين</strong></span>
+        <span id="ringtoneArrow">▼</span>
+      </button>
+
+      <div id="ringtoneDrawer" class="ringtone-drawer">
+        <!-- 1: نغمة رنة الـ Deadline -->
+        <div class="tone-slot">
+          <div class="tone-slot-header">
+            <span class="tone-slot-title">1. نغمة رنة الـ Deadline</span>
+            <span id="deadlineFileLabel" class="tone-file-badge">نغمة جاهزة</span>
+          </div>
+          <div class="tone-controls-row">
+            <select id="deadlineToneSelect" onchange="updatePresetTone('deadline', this.value)">
+              <option value="urgent">نغمة قوية للـ Deadline</option>
+              <option value="classic">نغمة كلاسيكية متقطعة</option>
+              <option value="soft">نغمة هادية</option>
+            </select>
+            <button type="button" onclick="pickAudioFile('deadline')">اختيار نغمة من الجهاز</button>
+            <button type="button" onclick="previewSlotTone('deadline')">تجربة النغمة</button>
+            <button type="button" onclick="clearCustomAudio('deadline')">إزالة المخصصة</button>
+          </div>
+        </div>
+
+        <!-- 2: نغمة الرنة قبل ميعاد الـ Deadline -->
+        <div class="tone-slot">
+          <div class="tone-slot-header">
+            <span class="tone-slot-title">2. نغمة الرنة قبل ميعاد الـ Deadline</span>
+            <span id="prepFileLabel" class="tone-file-badge">نغمة جاهزة</span>
+          </div>
+          <div class="tone-controls-row">
+            <select id="prepToneSelect" onchange="updatePresetTone('prep', this.value)">
+              <option value="soft">نغمة هادية للبدء المبكر</option>
+              <option value="classic">نغمة كلاسيكية متقطعة</option>
+              <option value="urgent">نغمة قوية</option>
+            </select>
+            <button type="button" onclick="pickAudioFile('prep')">اختيار نغمة من الجهاز</button>
+            <button type="button" onclick="previewSlotTone('prep')">تجربة النغمة</button>
+            <button type="button" onclick="clearCustomAudio('prep')">إزالة المخصصة</button>
+          </div>
+        </div>
+
+        <!-- 3: صوت الإشعارات من البرنامج -->
+        <div class="tone-slot">
+          <div class="tone-slot-header">
+            <span class="tone-slot-title">3. صوت الإشعارات من البرنامج</span>
+            <span id="notificationFileLabel" class="tone-file-badge">نغمة جاهزة</span>
+          </div>
+          <div class="tone-controls-row">
+            <select id="notificationToneSelect" onchange="updatePresetTone('notification', this.value)">
+              <option value="classic">نغمة إشعارات كلاسيكية</option>
+              <option value="soft">نغمة إشعارات هادية</option>
+              <option value="urgent">نغمة إشعارات قوية</option>
+            </select>
+            <button type="button" onclick="pickAudioFile('notification')">اختيار نغمة من الجهاز</button>
+            <button type="button" onclick="previewSlotTone('notification')">تجربة الصوت</button>
+            <button type="button" onclick="clearCustomAudio('notification')">إزالة المخصصة</button>
+          </div>
+        </div>
+
+        <input id="audioFileInput" type="file" accept="audio/*" style="display:none;" />
       </div>
     </div>
 
@@ -477,7 +582,7 @@
 
     <div class="privacy-box">
       <strong>سياسة الخصوصية (Privacy Policy) — Study Partner:</strong>
-      يتم حفظ جميع مواعيد التسليمات والكويزات والمشاريع والملاحظات محلياً على جهاز المستخدم فقط ولا يتم إرسالها إلى خوادم خارجية. التطبيق مطوّر بواسطة <strong>Eng. Abdelrahman Karim Hassan</strong>.
+      يتم حفظ جميع مواعيد التسليمات والكويزات والمشاريع والملاحظات وإعدادات النغمات محلياً على جهاز المستخدم فقط ولا يتم إرسالها إلى خوادم خارجية. التطبيق مطوّر بواسطة <strong>Eng. Abdelrahman Karim Hassan</strong>.
     </div>
 
     <footer>
@@ -488,24 +593,111 @@
   <div id="alarmModal" class="alarm-modal">
     <div class="alarm-box">
       <h3 id="alarmTitle">تنبيه من Study Partner</h3>
-      <p id="alarmBody" style="margin-bottom:16px;"></p>
-      <button class="btn-danger" onclick="stopAlarm()">إيقاف المنبه</button>
+      <p id="alarmBody" style="margin-bottom:18px;"></p>
+      <button class="btn-danger" style="width:100%;padding:12px;" onclick="stopAlarm()">إيقاف التنبيه</button>
     </div>
   </div>
 
   <script>
     const STORAGE_KEY = "study_partner_tasks_v1";
-    const RINGTONE_KEY = "study_partner_ringtone_v1";
+    const TONE_SETTINGS_KEY = "study_partner_tone_settings_v1";
+    const MAX_TONE_DURATION_MS = 60 * 1000; // حد أقصى 60 ثانية
+
+    const defaultToneSettings = {
+      deadline: { preset: "urgent", customName: "", customData: "" },
+      prep: { preset: "soft", customName: "", customData: "" },
+      notification: { preset: "classic", customName: "", customData: "" }
+    };
 
     let tasks = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-    let selectedRingtone = localStorage.getItem(RINGTONE_KEY) || "classic";
+    let toneSettings = loadToneSettings();
     let currentFilter = "all";
     let alarmInterval = null;
+    let toneStopTimer = null;
     let audioCtx = null;
+    let customAudioPlayer = null;
+    let activePickSlot = null;
 
-    document.getElementById("ringtoneSelect").value = selectedRingtone;
+    function loadToneSettings() {
+      try {
+        const raw = JSON.parse(localStorage.getItem(TONE_SETTINGS_KEY) || "{}");
+        return {
+          deadline: { ...defaultToneSettings.deadline, ...(raw.deadline || {}) },
+          prep: { ...defaultToneSettings.prep, ...(raw.prep || {}) },
+          notification: { ...defaultToneSettings.notification, ...(raw.notification || {}) }
+        };
+      } catch (e) {
+        return { ...defaultToneSettings };
+      }
+    }
 
-    // محرك إشعارات أندرويد عبر Capacitor LocalNotifications
+    function saveToneSettings() {
+      try {
+        localStorage.setItem(TONE_SETTINGS_KEY, JSON.stringify(toneSettings));
+      } catch (e) {
+        alert("تعذر حفظ ملف الصوت لأن حجمه كبير جداً؛ جرّب ملف صوت أقصر أو أصغر حجماً.");
+      }
+    }
+
+    function syncToneUI() {
+      document.getElementById("deadlineToneSelect").value = toneSettings.deadline.preset;
+      document.getElementById("prepToneSelect").value = toneSettings.prep.preset;
+      document.getElementById("notificationToneSelect").value = toneSettings.notification.preset;
+
+      document.getElementById("deadlineFileLabel").textContent =
+        toneSettings.deadline.customName ? `ملف: ${toneSettings.deadline.customName}` : "نغمة جاهزة";
+      document.getElementById("prepFileLabel").textContent =
+        toneSettings.prep.customName ? `ملف: ${toneSettings.prep.customName}` : "نغمة جاهزة";
+      document.getElementById("notificationFileLabel").textContent =
+        toneSettings.notification.customName ? `ملف: ${toneSettings.notification.customName}` : "نغمة جاهزة";
+    }
+
+    function toggleRingtoneDrawer() {
+      const drawer = document.getElementById("ringtoneDrawer");
+      const arrow = document.getElementById("ringtoneArrow");
+      const isOpen = drawer.classList.toggle("open");
+      arrow.textContent = isOpen ? "▲" : "▼";
+    }
+
+    function updatePresetTone(slot, presetValue) {
+      toneSettings[slot].preset = presetValue;
+      saveToneSettings();
+    }
+
+    function pickAudioFile(slot) {
+      activePickSlot = slot;
+      const input = document.getElementById("audioFileInput");
+      input.value = "";
+      input.click();
+    }
+
+    function clearCustomAudio(slot) {
+      toneSettings[slot].customName = "";
+      toneSettings[slot].customData = "";
+      saveToneSettings();
+      syncToneUI();
+    }
+
+    document.getElementById("audioFileInput").addEventListener("change", function (e) {
+      const file = e.target.files && e.target.files[0];
+      if (!file || !activePickSlot) return;
+
+      if (file.size > 4.5 * 1024 * 1024) {
+        alert("حجم الملف الصوتي كبير (أكبر من 4.5 ميجا). يُفضل اختيار ملف صوتي أصغر حتى يعمل بسلاسة.");
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = function () {
+        toneSettings[activePickSlot].customName = file.name;
+        toneSettings[activePickSlot].customData = reader.result;
+        saveToneSettings();
+        syncToneUI();
+        previewSlotTone(activePickSlot);
+      };
+      reader.readAsDataURL(file);
+    });
+
     window.StudyPartnerAlarm = {
       getLocalNotificationsPlugin() {
         const cap = window.Capacitor;
@@ -558,7 +750,7 @@
         return base * 10 + (suffix === "deadline" ? 2 : 1);
       },
 
-      async scheduleSingle(notifId, title, body, targetTs) {
+      async scheduleSingle(notifId, title, body, targetTs, kind) {
         if (!targetTs || targetTs <= Date.now()) return false;
         const LN = this.getLocalNotificationsPlugin();
         if (!LN || typeof LN.schedule !== "function") return false;
@@ -572,6 +764,7 @@
                 title: title || "Study Partner",
                 body: body || "حان وقت المذاكرة!",
                 channelId: "study_partner_alarms",
+                extra: { kind: kind || "notification" },
                 schedule: {
                   at: new Date(targetTs),
                   allowWhileIdle: true
@@ -598,7 +791,8 @@
             this.makeNotifId(task.id, "prep"),
             `حان وقت البدء: ${task.title}`,
             `تنبيه مبكر قبل الـ Deadline (${formatDateTime(task.deadline)}) للبدء الآن.`,
-            task.prepTime
+            task.prepTime,
+            "prep"
           );
         }
 
@@ -607,7 +801,8 @@
             this.makeNotifId(task.id, "deadline"),
             `يوم الـ Deadline: ${task.title}`,
             `وصل موعد التسليم/الكويز/المشروع (${formatDateTime(task.deadline)}).`,
-            task.deadline
+            task.deadline,
+            "deadline"
           );
         }
       },
@@ -623,16 +818,27 @@
             ]
           });
         } catch (e) {}
+      },
+
+      async bindActionListener() {
+        const LN = this.getLocalNotificationsPlugin();
+        if (!LN || typeof LN.addListener !== "function") return;
+        try {
+          await LN.addListener("localNotificationActionPerformed", (event) => {
+            const notif = event && event.notification;
+            const kind = (notif && notif.extra && notif.extra.kind) || "notification";
+            triggerAlarm(
+              (notif && notif.title) || "تنبيه من Study Partner",
+              (notif && notif.body) || "حان وقت المذاكرة!",
+              kind
+            );
+          });
+        } catch (e) {}
       }
     };
 
     function saveTasks() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
-    }
-
-    function changeRingtone() {
-      selectedRingtone = document.getElementById("ringtoneSelect").value;
-      localStorage.setItem(RINGTONE_KEY, selectedRingtone);
     }
 
     function toggleTheme() {
@@ -678,7 +884,7 @@
       osc.stop(now + duration);
     }
 
-    function playRingtone(mode = selectedRingtone) {
+    function playPresetTone(mode = "classic") {
       try {
         if (!audioCtx) {
           audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -701,24 +907,68 @@
       } catch (e) {}
     }
 
-    function triggerAlarm(title, body, mode = selectedRingtone) {
+    function clearToneStopTimer() {
+      if (toneStopTimer) {
+        clearTimeout(toneStopTimer);
+        toneStopTimer = null;
+      }
+    }
+
+    function playSlotOnce(slot = "notification") {
+      const cfg = toneSettings[slot] || toneSettings.notification;
+      if (cfg && cfg.customData) {
+        try {
+          if (customAudioPlayer) {
+            customAudioPlayer.pause();
+          }
+          customAudioPlayer = new Audio(cfg.customData);
+          customAudioPlayer.currentTime = 0;
+          customAudioPlayer.play().catch(() => {
+            playPresetTone(cfg.preset);
+          });
+          return;
+        } catch (e) {}
+      }
+      playPresetTone((cfg && cfg.preset) || "classic");
+    }
+
+    function triggerAlarm(title, body, slot = "deadline") {
       document.getElementById("alarmTitle").textContent = title;
       document.getElementById("alarmBody").textContent = body;
       document.getElementById("alarmModal").classList.add("show");
-      playRingtone(mode);
       clearInterval(alarmInterval);
-      alarmInterval = setInterval(() => playRingtone(mode), 1300);
+      clearToneStopTimer();
+      playSlotOnce(slot);
+      alarmInterval = setInterval(() => playSlotOnce(slot), 1800);
+      toneStopTimer = setTimeout(() => {
+        stopAlarm();
+      }, MAX_TONE_DURATION_MS);
     }
 
     function stopAlarm() {
+      clearToneStopTimer();
       clearInterval(alarmInterval);
       alarmInterval = null;
+      if (customAudioPlayer) {
+        try {
+          customAudioPlayer.pause();
+          customAudioPlayer.currentTime = 0;
+        } catch (e) {}
+      }
       document.getElementById("alarmModal").classList.remove("show");
     }
 
-    function previewRingtone() {
-      const mode = document.getElementById("ringtoneSelect").value;
-      playRingtone(mode);
+    function previewSlotTone(slot) {
+      stopAlarm();
+      playSlotOnce(slot);
+      toneStopTimer = setTimeout(() => {
+        if (customAudioPlayer) {
+          try {
+            customAudioPlayer.pause();
+            customAudioPlayer.currentTime = 0;
+          } catch (e) {}
+        }
+      }, MAX_TONE_DURATION_MS);
     }
 
     async function addSampleTasks() {
@@ -871,7 +1121,7 @@
           triggerAlarm(
             `حان وقت البدء: ${t.title}`,
             `تنبيه مبكر قبل الـ Deadline (${formatDateTime(t.deadline)}) حتى تبدأ في التنفيذ الآن.`,
-            selectedRingtone === "urgent" ? "soft" : selectedRingtone
+            "prep"
           );
         } else if (!t.deadlineTriggered && now >= t.deadline) {
           t.deadlineTriggered = true;
@@ -879,7 +1129,7 @@
           triggerAlarm(
             `يوم الـ Deadline: ${t.title}`,
             `وصل موعد التسليم/الكويز/المشروع المحدد (${formatDateTime(t.deadline)}).`,
-            "urgent"
+            "deadline"
           );
         }
       });
@@ -889,7 +1139,9 @@
     }, 1000);
 
     window.addEventListener("DOMContentLoaded", async () => {
+      syncToneUI();
       await window.StudyPartnerAlarm.requestPermission();
+      await window.StudyPartnerAlarm.bindActionListener();
       for (const t of tasks) {
         if (!t.done) {
           await window.StudyPartnerAlarm.scheduleTaskNotifications(t);

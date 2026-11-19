@@ -1,0 +1,13 @@
+{
+  "name": "study-partner",
+  "version": "1.0.0",
+  "description": "Study Partner - Developed by Eng. Abdelrahman Karim Hassan",
+  "dependencies": {
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/local-notifications": "^6.1.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2"
+  }
+}

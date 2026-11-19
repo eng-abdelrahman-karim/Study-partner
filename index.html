@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Study Partner | منبه التسليمات والكويزات</title>
+  <title>Study Partner | منبه التسليمات والكويزات والمشاريع</title>
   <style>
     :root {
       --bg: #0f172a;
@@ -14,6 +14,7 @@
       --primary: #3b82f6;
       --primary-hover: #2563eb;
       --accent: #f59e0b;
+      --purple: #a855f7;
       --danger: #ef4444;
       --success: #10b981;
       --border: rgba(148, 163, 184, 0.18);
@@ -250,6 +251,10 @@
       border-right-color: var(--accent);
     }
 
+    .task-item.project {
+      border-right-color: var(--purple);
+    }
+
     .task-item.urgent {
       border-right-color: var(--danger);
     }
@@ -283,6 +288,11 @@
     .badge-quiz {
       background: rgba(245, 158, 11, 0.2);
       color: #fcd34d;
+    }
+
+    .badge-project {
+      background: rgba(168, 85, 247, 0.22);
+      color: #d8b4fe;
     }
 
     .countdown {
@@ -374,7 +384,7 @@
       <div class="brand">
         <h1>Study Partner</h1>
         <div class="dev-credit">Developed by Eng. Abdelrahman Karim Hassan</div>
-        <p>تنظيم التسليمات والكويزات مع تنبيه للبدء المبكر ومنبه ليوم الـ Deadline</p>
+        <p>تنظيم التسليمات والكويزات والمشاريع مع تنبيه للبدء المبكر ومنبه ليوم الـ Deadline</p>
       </div>
       <div class="header-actions">
         <button class="btn-warn" onclick="addSampleTasks()">تجربة سريعة (منبه خلال 10 ثوانٍ)</button>
@@ -399,11 +409,11 @@
 
     <div class="grid">
       <div class="card">
-        <h2>إضافة تسليمة أو كويز جديد</h2>
+        <h2>إضافة تسليمة أو كويز جديد أو مشروع</h2>
         <form id="taskForm">
           <div class="form-group">
-            <label for="title">العنوان (اسم المادة / الكويز / التسليمة)</label>
-            <input id="title" type="text" placeholder="مثال: تسليمة Design - Sheet 3" required />
+            <label for="title">العنوان (اسم المادة / الكويز / التسليمة/المشروع)</label>
+            <input id="title" type="text" placeholder="مثال: تسليمة Design - Sheet 3 أو مشروع التصنيع" required />
           </div>
 
           <div class="row-2">
@@ -412,14 +422,20 @@
               <select id="type">
                 <option value="assignment">تسليمة (Assignment)</option>
                 <option value="quiz">كويز (Quiz)</option>
+                <option value="project">مشروع (Project)</option>
               </select>
             </div>
 
             <div class="form-group">
               <label for="prepMinutes">التنبيه للبدء قبل الـ Deadline بـ</label>
               <select id="prepMinutes">
-                <option value="1440">قبلها بيوم (24 ساعة)</option>
+                <option value="10080">أسبوع (7 أيام)</option>
+                <option value="8640">6 أيام</option>
+                <option value="7200">5 أيام</option>
+                <option value="5760">4 أيام</option>
+                <option value="4320">3 أيام</option>
                 <option value="2880">قبلها بيومين (48 ساعة)</option>
+                <option value="1440">قبلها بيوم (24 ساعة)</option>
                 <option value="180">قبلها بـ 3 ساعات</option>
                 <option value="60">قبلها بساعة</option>
                 <option value="15">قبلها بـ 15 دقيقة</option>
@@ -451,6 +467,7 @@
           <button onclick="setFilter('all')">الكل</button>
           <button onclick="setFilter('assignment')">التسليمات</button>
           <button onclick="setFilter('quiz')">الكويزات</button>
+          <button onclick="setFilter('project')">المشاريع</button>
           <button onclick="setFilter('done')">المكتملة</button>
         </div>
 
@@ -460,7 +477,7 @@
 
     <div class="privacy-box">
       <strong>سياسة الخصوصية (Privacy Policy) — Study Partner:</strong>
-      يتم حفظ جميع مواعيد التسليمات والكويزات والملاحظات محلياً على جهاز المستخدم فقط ولا يتم إرسالها إلى خوادم خارجية. التطبيق مطوّر بواسطة <strong>Eng. Abdelrahman Karim Hassan</strong>.
+      يتم حفظ جميع مواعيد التسليمات والكويزات والمشاريع والملاحظات محلياً على جهاز المستخدم فقط ولا يتم إرسالها إلى خوادم خارجية. التطبيق مطوّر بواسطة <strong>Eng. Abdelrahman Karim Hassan</strong>.
     </div>
 
     <footer>
@@ -587,8 +604,8 @@
       const now = Date.now();
       tasks.push({
         id: now + 1,
-        title: "تجربة منبه البدء (تسليمة هندسية)",
-        type: "assignment",
+        title: "تجربة منبه البدء (مشروع هندسي)",
+        type: "project",
         deadline: now + 65000,
         prepTime: now + 10000,
         prepLabel: "بعد 10 ثوانٍ",
@@ -601,11 +618,19 @@
       renderTasks();
     }
 
+    function getTypeBadge(type) {
+      if (type === "quiz") return `<span class="badge badge-quiz">كويز</span>`;
+      if (type === "project") return `<span class="badge badge-project">مشروع</span>`;
+      return `<span class="badge badge-assignment">تسليمة</span>`;
+    }
+
     document.getElementById("taskForm").addEventListener("submit", function (e) {
       e.preventDefault();
       const title = document.getElementById("title").value.trim();
       const type = document.getElementById("type").value;
-      const prepMinutes = Number(document.getElementById("prepMinutes").value);
+      const prepSelect = document.getElementById("prepMinutes");
+      const prepMinutes = Number(prepSelect.value);
+      const prepText = prepSelect.options[prepSelect.selectedIndex].text;
       const deadlineVal = document.getElementById("deadline").value;
       const notes = document.getElementById("notes").value.trim();
 
@@ -620,7 +645,7 @@
         type,
         deadline: deadlineTs,
         prepTime: prepTs,
-        prepLabel: `قبل الموعد بـ ${prepMinutes} دقيقة`,
+        prepLabel: prepText,
         notes,
         prepTriggered: false,
         deadlineTriggered: false,
@@ -649,6 +674,7 @@
       const filtered = tasks.filter(t => {
         if (currentFilter === "assignment") return t.type === "assignment" && !t.done;
         if (currentFilter === "quiz") return t.type === "quiz" && !t.done;
+        if (currentFilter === "project") return t.type === "project" && !t.done;
         if (currentFilter === "done") return t.done;
         return true;
       });
@@ -670,9 +696,7 @@
             <div class="task-item ${t.type} ${isUrgent ? "urgent" : ""} ${t.done ? "done" : ""}">
               <div class="task-top">
                 <div>
-                  <span class="badge ${t.type === "quiz" ? "badge-quiz" : "badge-assignment"}">
-                    ${t.type === "quiz" ? "كويز" : "تسليمة"}
-                  </span>
+                  ${getTypeBadge(t.type)}
                   <strong style="font-size:1.05rem;">${t.title}</strong>
                 </div>
               </div>
@@ -712,7 +736,7 @@
           changed = true;
           triggerAlarm(
             `يوم الـ Deadline: ${t.title}`,
-            `وصل موعد التسليم/الكويز المحدد (${formatDateTime(t.deadline)}).`,
+            `وصل موعد التسليم/الكويز/المشروع المحدد (${formatDateTime(t.deadline)}).`,
             "urgent"
           );
         }

@@ -138,14 +138,34 @@
       border: none;
     }
 
-    .notice-box {
-      background: rgba(245, 158, 11, 0.12);
-      border: 1px solid rgba(245, 158, 11, 0.4);
-      color: var(--text);
-      padding: 12px 16px;
-      border-radius: 14px;
-      font-size: 0.88rem;
+    .ringtone-bar {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 14px 18px;
       margin-bottom: 18px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .ringtone-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      min-width: 240px;
+    }
+
+    .ringtone-controls select {
+      flex: 1;
+      min-width: 190px;
+      padding: 9px 12px;
+      background: var(--card-2);
+      color: var(--text);
     }
 
     .grid {
@@ -358,10 +378,24 @@
       </div>
       <div class="header-actions">
         <button class="btn-warn" onclick="addSampleTasks()">تجربة سريعة (منبه خلال 10 ثوانٍ)</button>
-        <button onclick="testAlarmSound()">اختبار صوت المنبه</button>
         <button onclick="toggleTheme()">تغيير المظهر</button>
       </div>
     </header>
+
+    <div class="ringtone-bar">
+      <div>
+        <strong>نغمة التنبيه المختارة:</strong>
+        <span class="meta" style="display:block;margin:0;">اختر النغمة المناسبة واستمع إليها قبل الحفظ</span>
+      </div>
+      <div class="ringtone-controls">
+        <select id="ringtoneSelect" onchange="changeRingtone()">
+          <option value="classic">نغمة كلاسيكية متقطعة</option>
+          <option value="soft">نغمة هادية للبدء المبكر</option>
+          <option value="urgent">نغمة قوية ليوم الـ Deadline</option>
+        </select>
+        <button type="button" onclick="previewRingtone()">اختبار النغمة</button>
+      </div>
+    </div>
 
     <div class="grid">
       <div class="card">
@@ -444,13 +478,23 @@
 
   <script>
     const STORAGE_KEY = "study_partner_tasks_v1";
+    const RINGTONE_KEY = "study_partner_ringtone_v1";
+
     let tasks = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    let selectedRingtone = localStorage.getItem(RINGTONE_KEY) || "classic";
     let currentFilter = "all";
     let alarmInterval = null;
     let audioCtx = null;
 
+    document.getElementById("ringtoneSelect").value = selectedRingtone;
+
     function saveTasks() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+    }
+
+    function changeRingtone() {
+      selectedRingtone = document.getElementById("ringtoneSelect").value;
+      localStorage.setItem(RINGTONE_KEY, selectedRingtone);
     }
 
     function toggleTheme() {
@@ -479,30 +523,53 @@
       return `${days}ي : ${hours}س : ${mins}د : ${secs}ث`;
     }
 
-    function playBeep() {
+    function playToneNote(freq, startOffset, duration, type = "sine", volume = 0.22) {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      const now = audioCtx.currentTime + startOffset;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, now);
+      gain.gain.setValueAtTime(volume, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(now);
+      osc.stop(now + duration);
+    }
+
+    function playRingtone(mode = selectedRingtone) {
       try {
         if (!audioCtx) {
           audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         }
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = "sine";
-        osc.frequency.setValueAtTime(880, audioCtx.currentTime);
-        gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.start();
-        osc.stop(audioCtx.currentTime + 0.35);
+        if (audioCtx.state === "suspended") {
+          audioCtx.resume();
+        }
+
+        if (mode === "soft") {
+          playToneNote(523.25, 0, 0.22, "sine", 0.16);
+          playToneNote(659.25, 0.24, 0.25, "sine", 0.16);
+        } else if (mode === "urgent") {
+          playToneNote(987.77, 0, 0.18, "square", 0.18);
+          playToneNote(783.99, 0.2, 0.18, "square", 0.18);
+          playToneNote(987.77, 0.4, 0.18, "square", 0.18);
+        } else {
+          playToneNote(880, 0, 0.2, "triangle", 0.22);
+          playToneNote(880, 0.28, 0.2, "triangle", 0.22);
+        }
       } catch (e) {}
     }
 
-    function triggerAlarm(title, body) {
+    function triggerAlarm(title, body, mode = selectedRingtone) {
       document.getElementById("alarmTitle").textContent = title;
       document.getElementById("alarmBody").textContent = body;
       document.getElementById("alarmModal").classList.add("show");
-      playBeep();
+      playRingtone(mode);
       clearInterval(alarmInterval);
-      alarmInterval = setInterval(playBeep, 1200);
+      alarmInterval = setInterval(() => playRingtone(mode), 1300);
     }
 
     function stopAlarm() {
@@ -511,11 +578,9 @@
       document.getElementById("alarmModal").classList.remove("show");
     }
 
-    function testAlarmSound() {
-      triggerAlarm(
-        "اختبار منبه Study Partner",
-        "هذا اختبار لصوت المنبه والنافذة التنبيهية — Developed by Eng. Abdelrahman Karim Hassan"
-      );
+    function previewRingtone() {
+      const mode = document.getElementById("ringtoneSelect").value;
+      playRingtone(mode);
     }
 
     function addSampleTasks() {
@@ -639,14 +704,16 @@
           changed = true;
           triggerAlarm(
             `حان وقت البدء: ${t.title}`,
-            `تنبيه مبكر قبل الـ Deadline (${formatDateTime(t.deadline)}) حتى تبدأ في التنفيذ الآن.`
+            `تنبيه مبكر قبل الـ Deadline (${formatDateTime(t.deadline)}) حتى تبدأ في التنفيذ الآن.`,
+            selectedRingtone === "urgent" ? "soft" : selectedRingtone
           );
         } else if (!t.deadlineTriggered && now >= t.deadline) {
           t.deadlineTriggered = true;
           changed = true;
           triggerAlarm(
             `يوم الـ Deadline: ${t.title}`,
-            `وصل موعد التسليم/الكويز المحدد (${formatDateTime(t.deadline)}).`
+            `وصل موعد التسليم/الكويز المحدد (${formatDateTime(t.deadline)}).`,
+            "urgent"
           );
         }
       });

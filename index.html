@@ -505,6 +505,127 @@
 
     document.getElementById("ringtoneSelect").value = selectedRingtone;
 
+    // محرك إشعارات أندرويد عبر Capacitor LocalNotifications
+    window.StudyPartnerAlarm = {
+      getLocalNotificationsPlugin() {
+        const cap = window.Capacitor;
+        if (!cap || !cap.Plugins || !cap.Plugins.LocalNotifications) return null;
+        if (typeof cap.isNativePlatform === "function" && !cap.isNativePlatform()) return null;
+        return cap.Plugins.LocalNotifications;
+      },
+
+      async ensureChannel() {
+        const LN = this.getLocalNotificationsPlugin();
+        if (!LN || typeof LN.createChannel !== "function") return;
+        try {
+          await LN.createChannel({
+            id: "study_partner_alarms",
+            name: "Study Partner Alarms",
+            description: "تنبيهات البدء المبكر ومواعيد التسليم والكويزات والمشاريع",
+            importance: 5,
+            sound: "default",
+            vibration: true
+          });
+        } catch (e) {}
+      },
+
+      async requestPermission() {
+        try {
+          const LN = this.getLocalNotificationsPlugin();
+          if (LN && typeof LN.requestPermissions === "function") {
+            const current = typeof LN.checkPermissions === "function" ? await LN.checkPermissions() : null;
+            if (current && current.display === "granted") {
+              await this.ensureChannel();
+              return true;
+            }
+            const perm = await LN.requestPermissions();
+            await this.ensureChannel();
+            return !!(perm && perm.display === "granted");
+          }
+          if ("Notification" in window && Notification.permission === "default") {
+            const res = await Notification.requestPermission();
+            return res === "granted";
+          }
+          return ("Notification" in window && Notification.permission === "granted");
+        } catch (e) {
+          console.error("Permission error:", e);
+          return false;
+        }
+      },
+
+      makeNotifId(taskId, suffix) {
+        const base = Math.abs(Number(taskId) || Date.now()) % 200000000;
+        return base * 10 + (suffix === "deadline" ? 2 : 1);
+      },
+
+      async scheduleSingle(notifId, title, body, targetTs) {
+        if (!targetTs || targetTs <= Date.now()) return false;
+        const LN = this.getLocalNotificationsPlugin();
+        if (!LN || typeof LN.schedule !== "function") return false;
+
+        try {
+          await this.ensureChannel();
+          await LN.schedule({
+            notifications: [
+              {
+                id: notifId,
+                title: title || "Study Partner",
+                body: body || "حان وقت المذاكرة!",
+                channelId: "study_partner_alarms",
+                schedule: {
+                  at: new Date(targetTs),
+                  allowWhileIdle: true
+                },
+                sound: "default"
+              }
+            ]
+          });
+          return true;
+        } catch (e) {
+          console.error("Schedule single error:", e);
+          return false;
+        }
+      },
+
+      async scheduleTaskNotifications(task) {
+        if (!task || task.done) return;
+        await this.requestPermission();
+        await this.cancelTaskNotifications(task.id);
+
+        const now = Date.now();
+        if (!task.prepTriggered && task.prepTime && task.prepTime > now) {
+          await this.scheduleSingle(
+            this.makeNotifId(task.id, "prep"),
+            `حان وقت البدء: ${task.title}`,
+            `تنبيه مبكر قبل الـ Deadline (${formatDateTime(task.deadline)}) للبدء الآن.`,
+            task.prepTime
+          );
+        }
+
+        if (!task.deadlineTriggered && task.deadline && task.deadline > now) {
+          await this.scheduleSingle(
+            this.makeNotifId(task.id, "deadline"),
+            `يوم الـ Deadline: ${task.title}`,
+            `وصل موعد التسليم/الكويز/المشروع (${formatDateTime(task.deadline)}).`,
+            task.deadline
+          );
+        }
+      },
+
+      async cancelTaskNotifications(taskId) {
+        const LN = this.getLocalNotificationsPlugin();
+        if (!LN || typeof LN.cancel !== "function") return;
+        try {
+          await LN.cancel({
+            notifications: [
+              { id: this.makeNotifId(taskId, "prep") },
+              { id: this.makeNotifId(taskId, "deadline") }
+            ]
+          });
+        } catch (e) {}
+      }
+    };
+
     function saveTasks() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
     }
@@ -600,9 +721,9 @@
       playRingtone(mode);
     }
 
-    function addSampleTasks() {
+    async function addSampleTasks() {
       const now = Date.now();
-      tasks.push({
+      const sampleTask = {
         id: now + 1,
         title: "تجربة منبه البدء (مشروع هندسي)",
         type: "project",
@@ -613,9 +734,11 @@
         prepTriggered: false,
         deadlineTriggered: false,
         done: false
-      });
+      };
+      tasks.push(sampleTask);
       saveTasks();
       renderTasks();
+      await window.StudyPartnerAlarm.scheduleTaskNotifications(sampleTask);
     }
 
     function getTypeBadge(type) {
@@ -624,7 +747,7 @@
       return `<span class="badge badge-assignment">تسليمة</span>`;
     }
 
-    document.getElementById("taskForm").addEventListener("submit", function (e) {
+    document.getElementById("taskForm").addEventListener("submit", async function (e) {
       e.preventDefault();
       const title = document.getElementById("title").value.trim();
       const type = document.getElementById("type").value;
@@ -639,7 +762,7 @@
       const deadlineTs = new Date(deadlineVal).getTime();
       const prepTs = deadlineTs - prepMinutes * 60 * 1000;
 
-      tasks.push({
+      const newTask = {
         id: Date.now(),
         title,
         type,
@@ -650,23 +773,42 @@
         prepTriggered: false,
         deadlineTriggered: false,
         done: false
-      });
+      };
 
+      tasks.push(newTask);
       saveTasks();
       renderTasks();
       this.reset();
+
+      await window.StudyPartnerAlarm.scheduleTaskNotifications(newTask);
     });
 
-    function toggleDone(id) {
-      tasks = tasks.map(t => (t.id === id ? { ...t, done: !t.done } : t));
+    async function toggleDone(id) {
+      let target = null;
+      tasks = tasks.map(t => {
+        if (t.id === id) {
+          target = { ...t, done: !t.done };
+          return target;
+        }
+        return t;
+      });
       saveTasks();
       renderTasks();
+
+      if (target) {
+        if (target.done) {
+          await window.StudyPartnerAlarm.cancelTaskNotifications(id);
+        } else {
+          await window.StudyPartnerAlarm.scheduleTaskNotifications(target);
+        }
+      }
     }
 
-    function deleteTask(id) {
+    async function deleteTask(id) {
       tasks = tasks.filter(t => t.id !== id);
       saveTasks();
       renderTasks();
+      await window.StudyPartnerAlarm.cancelTaskNotifications(id);
     }
 
     function renderTasks() {
@@ -745,6 +887,15 @@
       if (changed) saveTasks();
       renderTasks();
     }, 1000);
+
+    window.addEventListener("DOMContentLoaded", async () => {
+      await window.StudyPartnerAlarm.requestPermission();
+      for (const t of tasks) {
+        if (!t.done) {
+          await window.StudyPartnerAlarm.scheduleTaskNotifications(t);
+        }
+      }
+    });
 
     renderTasks();
   </script>

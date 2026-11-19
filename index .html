@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Study Partner | منبه التسليمات والكويزات</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --card-2: #0b1220;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --accent: #f59e0b;
+      --danger: #ef4444;
+      --success: #10b981;
+      --border: rgba(148, 163, 184, 0.18);
+    }
+
+    body.light {
+      --bg: #f1f5f9;
+      --card: #ffffff;
+      --card-2: #f8fafc;
+      --text: #0f172a;
+      --muted: #475569;
+      --border: rgba(15, 23, 42, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 18px;
+      line-height: 1.6;
+      transition: background 0.25s, color 0.25s;
+    }
+
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+    }
+
+    header {
+      background: linear-gradient(135deg, var(--card), var(--card-2));
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 20px;
+      margin-bottom: 18px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand h1 {
+      font-size: 1.7rem;
+      color: var(--primary);
+      letter-spacing: 0.3px;
+    }
+
+    .brand .dev-credit {
+      margin-top: 4px;
+      font-size: 0.92rem;
+      font-weight: 700;
+      color: var(--accent);
+      direction: ltr;
+      text-align: right;
+    }
+
+    .brand p {
+      font-size: 0.88rem;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    .header-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    button, select, input, textarea {
+      font-size: 0.95rem;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      outline: none;
+    }
+
+    button {
+      cursor: pointer;
+      padding: 10px 14px;
+      font-weight: 600;
+      color: var(--text);
+      background: var(--card-2);
+      transition: 0.2s;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      filter: brightness(1.06);
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: #fff;
+      border: none;
+    }
+
+    .btn-primary:hover {
+      background: var(--primary-hover);
+    }
+
+    .btn-warn {
+      background: var(--accent);
+      color: #0f172a;
+      border: none;
+    }
+
+    .btn-danger {
+      background: var(--danger);
+      color: #fff;
+      border: none;
+    }
+
+    .btn-success {
+      background: var(--success);
+      color: #06281e;
+      border: none;
+    }
+
+    .notice-box {
+      background: rgba(245, 158, 11, 0.12);
+      border: 1px solid rgba(245, 158, 11, 0.4);
+      color: var(--text);
+      padding: 12px 16px;
+      border-radius: 14px;
+      font-size: 0.88rem;
+      margin-bottom: 18px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1.25fr;
+      gap: 18px;
+    }
+
+    @media (max-width: 820px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 18px;
+    }
+
+    .card h2 {
+      font-size: 1.15rem;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .form-group {
+      margin-bottom: 12px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 0.88rem;
+      color: var(--muted);
+    }
+
+    input, select, textarea {
+      width: 100%;
+      padding: 10px 12px;
+      background: var(--card-2);
+      color: var(--text);
+    }
+
+    .row-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    @media (max-width: 520px) {
+      .row-2 {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .task-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .task-item {
+      background: var(--card-2);
+      border: 1px solid var(--border);
+      border-right: 5px solid var(--primary);
+      border-radius: 16px;
+      padding: 14px;
+    }
+
+    .task-item.quiz {
+      border-right-color: var(--accent);
+    }
+
+    .task-item.urgent {
+      border-right-color: var(--danger);
+    }
+
+    .task-item.done {
+      opacity: 0.65;
+      border-right-color: var(--success);
+    }
+
+    .task-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .badge {
+      display: inline-block;
+      font-size: 0.76rem;
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-weight: 700;
+      margin-left: 6px;
+    }
+
+    .badge-assignment {
+      background: rgba(59, 130, 246, 0.2);
+      color: #93c5fd;
+    }
+
+    .badge-quiz {
+      background: rgba(245, 158, 11, 0.2);
+      color: #fcd34d;
+    }
+
+    .countdown {
+      font-weight: 800;
+      font-size: 0.95rem;
+      margin: 8px 0;
+      color: var(--success);
+    }
+
+    .countdown.urgent {
+      color: var(--danger);
+    }
+
+    .meta {
+      font-size: 0.83rem;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    .task-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .task-actions button {
+      padding: 6px 10px;
+      font-size: 0.82rem;
+    }
+
+    .empty {
+      text-align: center;
+      color: var(--muted);
+      padding: 28px 10px;
+    }
+
+    .alarm-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(2, 6, 23, 0.85);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+      z-index: 999;
+    }
+
+    .alarm-modal.show {
+      display: flex;
+    }
+
+    .alarm-box {
+      background: var(--card);
+      border: 2px solid var(--danger);
+      border-radius: 22px;
+      padding: 24px;
+      max-width: 440px;
+      width: 100%;
+      text-align: center;
+    }
+
+    .alarm-box h3 {
+      font-size: 1.35rem;
+      color: var(--danger);
+      margin-bottom: 10px;
+    }
+
+    .privacy-box {
+      margin-top: 22px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 16px;
+      font-size: 0.86rem;
+      color: var(--muted);
+    }
+
+    footer {
+      text-align: center;
+      margin-top: 18px;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="brand">
+        <h1>Study Partner</h1>
+        <div class="dev-credit">Developed by Eng. Abdelrahman Karim Hassan</div>
+        <p>تنظيم التسليمات والكويزات مع تنبيه للبدء المبكر ومنبه ليوم الـ Deadline</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn-warn" onclick="addSampleTasks()">تجربة سريعة (منبه خلال 10 ثوانٍ)</button>
+        <button onclick="testAlarmSound()">اختبار صوت المنبه</button>
+        <button onclick="toggleTheme()">تغيير المظهر</button>
+      </div>
+    </header>
+
+    <div class="notice-box">
+      <strong>ملاحظة مهمة حول الرنين:</strong> في نسخة المتصفح/الويب يعمل المنبه عندما يكون التطبيق أو التبويب مفتوحاً. لكي يرن تلقائياً والموبايل أو التابلت مقفول بالكامل، يجب ربط التطبيق بمنبه نظام أندرويد الأصلي عبر كود أندرويد (`Android / Capacitor` + صلاحيات التنبيهات الدقيقة والبطارية).
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h2>إضافة تسليمة أو كويز جديد</h2>
+        <form id="taskForm">
+          <div class="form-group">
+            <label for="title">العنوان (اسم المادة / الكويز / التسليمة)</label>
+            <input id="title" type="text" placeholder="مثال: تسليمة Design - Sheet 3" required />
+          </div>
+
+          <div class="row-2">
+            <div class="form-group">
+              <label for="type">النوع</label>
+              <select id="type">
+                <option value="assignment">تسليمة (Assignment)</option>
+                <option value="quiz">كويز (Quiz)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="prepMinutes">التنبيه للبدء قبل الـ Deadline بـ</label>
+              <select id="prepMinutes">
+                <option value="1440">قبلها بيوم (24 ساعة)</option>
+                <option value="2880">قبلها بيومين (48 ساعة)</option>
+                <option value="180">قبلها بـ 3 ساعات</option>
+                <option value="60">قبلها بساعة</option>
+                <option value="15">قبلها بـ 15 دقيقة</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="deadline">موعد الـ Deadline النهائي</label>
+            <input id="deadline" type="datetime-local" required />
+          </div>
+
+          <div class="form-group">
+            <label for="notes">ملاحظات إضافية (اختياري)</label>
+            <textarea id="notes" rows="2" placeholder="اكتب أي متطلبات أو تعليمات..."></textarea>
+          </div>
+
+          <button type="submit" class="btn-primary" style="width:100%;">حفظ الموعد وتفعيل المنبهات</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>
+          <span>المواعيد المجدولة</span>
+          <span id="taskCount" style="font-size:0.85rem;color:var(--muted);">0</span>
+        </h2>
+
+        <div class="filters">
+          <button onclick="setFilter('all')">الكل</button>
+          <button onclick="setFilter('assignment')">التسليمات</button>
+          <button onclick="setFilter('quiz')">الكويزات</button>
+          <button onclick="setFilter('done')">المكتملة</button>
+        </div>
+
+        <div id="taskList" class="task-list"></div>
+      </div>
+    </div>
+
+    <div class="privacy-box">
+      <strong>سياسة الخصوصية (Privacy Policy) — Study Partner:</strong>
+      يتم حفظ جميع مواعيد التسليمات والكويزات والملاحظات محلياً على جهاز المستخدم فقط ولا يتم إرسالها إلى خوادم خارجية. التطبيق مطوّر بواسطة <strong>Eng. Abdelrahman Karim Hassan</strong>.
+    </div>
+
+    <footer>
+      Study Partner — Developed by Eng. Abdelrahman Karim Hassan
+    </footer>
+  </div>
+
+  <div id="alarmModal" class="alarm-modal">
+    <div class="alarm-box">
+      <h3 id="alarmTitle">تنبيه من Study Partner</h3>
+      <p id="alarmBody" style="margin-bottom:16px;"></p>
+      <button class="btn-danger" onclick="stopAlarm()">إيقاف المنبه</button>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = "study_partner_tasks_v1";
+    let tasks = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    let currentFilter = "all";
+    let alarmInterval = null;
+    let audioCtx = null;
+
+    function saveTasks() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+    }
+
+    function toggleTheme() {
+      document.body.classList.toggle("light");
+    }
+
+    function setFilter(filter) {
+      currentFilter = filter;
+      renderTasks();
+    }
+
+    function formatDateTime(ts) {
+      return new Date(ts).toLocaleString("ar-EG", {
+        dateStyle: "medium",
+        timeStyle: "short"
+      });
+    }
+
+    function formatRemaining(ms) {
+      if (ms <= 0) return "انتهى الوقت أو حان الموعد الآن!";
+      const totalSec = Math.floor(ms / 1000);
+      const days = Math.floor(totalSec / 86400);
+      const hours = Math.floor((totalSec % 86400) / 3600);
+      const mins = Math.floor((totalSec % 3600) / 60);
+      const secs = totalSec % 60;
+      return `${days}ي : ${hours}س : ${mins}د : ${secs}ث`;
+    }
+
+    function playBeep() {
+      try {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.35);
+      } catch (e) {}
+    }
+
+    function triggerAlarm(title, body) {
+      document.getElementById("alarmTitle").textContent = title;
+      document.getElementById("alarmBody").textContent = body;
+      document.getElementById("alarmModal").classList.add("show");
+      playBeep();
+      clearInterval(alarmInterval);
+      alarmInterval = setInterval(playBeep, 1200);
+    }
+
+    function stopAlarm() {
+      clearInterval(alarmInterval);
+      alarmInterval = null;
+      document.getElementById("alarmModal").classList.remove("show");
+    }
+
+    function testAlarmSound() {
+      triggerAlarm(
+        "اختبار منبه Study Partner",
+        "هذا اختبار لصوت المنبه والنافذة التنبيهية — Developed by Eng. Abdelrahman Karim Hassan"
+      );
+    }
+
+    function addSampleTasks() {
+      const now = Date.now();
+      tasks.push({
+        id: now + 1,
+        title: "تجربة منبه البدء (تسليمة هندسية)",
+        type: "assignment",
+        deadline: now + 65000,
+        prepTime: now + 10000,
+        prepLabel: "بعد 10 ثوانٍ",
+        notes: "مهمة تجريبية للتأكد من عمل منبه البدء",
+        prepTriggered: false,
+        deadlineTriggered: false,
+        done: false
+      });
+      saveTasks();
+      renderTasks();
+    }
+
+    document.getElementById("taskForm").addEventListener("submit", function (e) {
+      e.preventDefault();
+      const title = document.getElementById("title").value.trim();
+      const type = document.getElementById("type").value;
+      const prepMinutes = Number(document.getElementById("prepMinutes").value);
+      const deadlineVal = document.getElementById("deadline").value;
+      const notes = document.getElementById("notes").value.trim();
+
+      if (!title || !deadlineVal) return;
+
+      const deadlineTs = new Date(deadlineVal).getTime();
+      const prepTs = deadlineTs - prepMinutes * 60 * 1000;
+
+      tasks.push({
+        id: Date.now(),
+        title,
+        type,
+        deadline: deadlineTs,
+        prepTime: prepTs,
+        prepLabel: `قبل الموعد بـ ${prepMinutes} دقيقة`,
+        notes,
+        prepTriggered: false,
+        deadlineTriggered: false,
+        done: false
+      });
+
+      saveTasks();
+      renderTasks();
+      this.reset();
+    });
+
+    function toggleDone(id) {
+      tasks = tasks.map(t => (t.id === id ? { ...t, done: !t.done } : t));
+      saveTasks();
+      renderTasks();
+    }
+
+    function deleteTask(id) {
+      tasks = tasks.filter(t => t.id !== id);
+      saveTasks();
+      renderTasks();
+    }
+
+    function renderTasks() {
+      const list = document.getElementById("taskList");
+      const filtered = tasks.filter(t => {
+        if (currentFilter === "assignment") return t.type === "assignment" && !t.done;
+        if (currentFilter === "quiz") return t.type === "quiz" && !t.done;
+        if (currentFilter === "done") return t.done;
+        return true;
+      });
+
+      document.getElementById("taskCount").textContent = `${filtered.length} عنصر`;
+
+      if (!filtered.length) {
+        list.innerHTML = `<div class="empty">لا توجد مواعيد مطابقة للفلتر الحالي.</div>`;
+        return;
+      }
+
+      const now = Date.now();
+      list.innerHTML = filtered
+        .sort((a, b) => a.deadline - b.deadline)
+        .map(t => {
+          const diff = t.deadline - now;
+          const isUrgent = !t.done && diff <= 24 * 60 * 60 * 1000;
+          return `
+            <div class="task-item ${t.type} ${isUrgent ? "urgent" : ""} ${t.done ? "done" : ""}">
+              <div class="task-top">
+                <div>
+                  <span class="badge ${t.type === "quiz" ? "badge-quiz" : "badge-assignment"}">
+                    ${t.type === "quiz" ? "كويز" : "تسليمة"}
+                  </span>
+                  <strong style="font-size:1.05rem;">${t.title}</strong>
+                </div>
+              </div>
+              <div class="countdown ${isUrgent ? "urgent" : ""}">${t.done ? "تم الإنجاز ✓" : formatRemaining(diff)}</div>
+              <div class="meta">
+                <div><strong>الـ Deadline:</strong> ${formatDateTime(t.deadline)}</div>
+                <div><strong>تنبيه البدء:</strong> ${formatDateTime(t.prepTime)} (${t.prepLabel})</div>
+                ${t.notes ? `<div><strong>ملاحظات:</strong> ${t.notes}</div>` : ""}
+              </div>
+              <div class="task-actions">
+                <button class="btn-success" onclick="toggleDone(${t.id})">${t.done ? "إعادة فتح" : "تم التسليم / الأداء"}</button>
+                <button class="btn-danger" onclick="deleteTask(${t.id})">حذف</button>
+              </div>
+            </div>
+          `;
+        })
+        .join("");
+    }
+
+    setInterval(() => {
+      const now = Date.now();
+      let changed = false;
+
+      tasks.forEach(t => {
+        if (t.done) return;
+
+        if (!t.prepTriggered && now >= t.prepTime) {
+          t.prepTriggered = true;
+          changed = true;
+          triggerAlarm(
+            `حان وقت البدء: ${t.title}`,
+            `تنبيه مبكر قبل الـ Deadline (${formatDateTime(t.deadline)}) حتى تبدأ في التنفيذ الآن.`
+          );
+        } else if (!t.deadlineTriggered && now >= t.deadline) {
+          t.deadlineTriggered = true;
+          changed = true;
+          triggerAlarm(
+            `يوم الـ Deadline: ${t.title}`,
+            `وصل موعد التسليم/الكويز المحدد (${formatDateTime(t.deadline)}).`
+          );
+        }
+      });
+
+      if (changed) saveTasks();
+      renderTasks();
+    }, 1000);
+
+    renderTasks();
+  </script>
+</body>
+</html>

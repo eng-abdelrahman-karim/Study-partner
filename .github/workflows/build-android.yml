@@ -529,6 +529,18 @@ jobs:
               s = s.replace("</application>", components + "\n    </application>", 1)
 
           open(manifest_path, "w", encoding="utf-8").write(s)
+
+          vars_path = "android/variables.gradle"
+          if os.path.exists(vars_path):
+              vg = open(vars_path, encoding="utf-8").read()
+              vg = re.sub(r"kotlinVersion\s*=\s*['\"][^'\"]+['\"]", "kotlinVersion = '1.9.22'", vg)
+              open(vars_path, "w", encoding="utf-8").write(vg)
+
+          root_gradle_path = "android/build.gradle"
+          if os.path.exists(root_gradle_path):
+              rg = open(root_gradle_path, encoding="utf-8").read()
+              rg = re.sub(r"kotlinVersion\s*=\s*['\"][^'\"]+['\"]", "kotlinVersion = '1.9.22'", rg)
+              open(root_gradle_path, "w", encoding="utf-8").write(rg)
           EOF
           python3 configure_alarm.py
 

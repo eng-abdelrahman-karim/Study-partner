@@ -485,8 +485,8 @@
         <p>تنظيم التسليمات والكويزات والمشاريع مع تنبيه للبدء المبكر ومنبه ليوم الـ Deadline</p>
       </div>
       <div class="header-actions">
-        <button class="btn-warn" onclick="addSampleTasks()">تجربة سريعة (منبه خلال 10 ثوانٍ)</button>
-        <button onclick="toggleTheme()">تغيير المظهر</button>
+        <button type="button" class="btn-warn" onclick="addSampleTasks()">تجربة سريعة (منبه خلال 10 ثوانٍ)</button>
+        <button type="button" onclick="toggleTheme()">تغيير المظهر</button>
       </div>
     </header>
 
@@ -555,7 +555,7 @@
     <div class="grid">
       <div class="card">
         <h2>إضافة تسليمة أو كويز جديد أو مشروع</h2>
-        <form id="taskForm">
+        <form id="taskForm" onsubmit="handleTaskSubmit(event)">
           <div class="form-group">
             <label for="title">العنوان (اسم المادة / الكويز / التسليمة/المشروع)</label>
             <input id="title" type="text" placeholder="مثال: تسليمة Design - Sheet 3 أو مشروع التصنيع" required />
@@ -609,11 +609,11 @@
         </h2>
 
         <div class="filters">
-          <button onclick="setFilter('all')">الكل</button>
-          <button onclick="setFilter('assignment')">التسليمات</button>
-          <button onclick="setFilter('quiz')">الكويزات</button>
-          <button onclick="setFilter('project')">المشاريع</button>
-          <button onclick="setFilter('done')">المكتملة</button>
+          <button type="button" onclick="setFilter('all')">الكل</button>
+          <button type="button" onclick="setFilter('assignment')">التسليمات</button>
+          <button type="button" onclick="setFilter('quiz')">الكويزات</button>
+          <button type="button" onclick="setFilter('project')">المشاريع</button>
+          <button type="button" onclick="setFilter('done')">المكتملة</button>
         </div>
 
         <div id="taskList" class="task-list"></div>
@@ -634,7 +634,7 @@
     <div class="alarm-box">
       <h3 id="alarmTitle">تنبيه من Study Partner</h3>
       <p id="alarmBody" style="margin-bottom:18px;"></p>
-      <button class="btn-danger" style="width:100%;padding:12px;" onclick="stopAlarm()">إيقاف التنبيه</button>
+      <button type="button" class="btn-danger" style="width:100%;padding:12px;" onclick="stopAlarm()">إيقاف التنبيه</button>
     </div>
   </div>
 
@@ -653,7 +653,16 @@
       notification: { preset: "classic", customName: "" }
     };
 
-    let tasks = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    function safeLoadTasks() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (e) {
+        return [];
+      }
+    }
+
+    let tasks = safeLoadTasks();
     let toneSettings = loadToneSettings();
     let customToneUrls = { deadline: null, prep: null, notification: null };
     let currentFilter = "all";
@@ -664,10 +673,14 @@
     let activePickSlot = null;
 
     function getNativeBridge() {
-      const cap = window.Capacitor;
-      if (!cap || !cap.Plugins || !cap.Plugins.AlarmBridge) return null;
-      if (typeof cap.isNativePlatform === "function" && !cap.isNativePlatform()) return null;
-      return cap.Plugins.AlarmBridge;
+      try {
+        const cap = window.Capacitor;
+        if (!cap || !cap.Plugins || !cap.Plugins.AlarmBridge) return null;
+        if (typeof cap.isNativePlatform === "function" && !cap.isNativePlatform()) return null;
+        return cap.Plugins.AlarmBridge;
+      } catch (e) {
+        return null;
+      }
     }
 
     async function refreshExactAlarmBanner() {
@@ -705,4 +718,720 @@
         reader.onload = () => {
           const res = String(reader.result || "");
           const commaIdx = res.indexOf(",");
-          resolve(commaIdx >= 0 ? res.slice(commaIdx + 1
+          resolve(commaIdx >= 0 ? res.slice(commaIdx + 1) : res);
+        };
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    async function syncNativeTone(slot, blobOrNull, preset) {
+      const bridge = getNativeBridge();
+      if (!bridge) return;
+      try {
+        if (blobOrNull && typeof bridge.saveToneFile === "function") {
+          const base64 = await blobToBase64(blobOrNull);
+          await bridge.saveToneFile({ slot, base64, preset: preset || "classic" });
+        } else if (typeof bridge.clearToneFile === "function") {
+          await bridge.clearToneFile({ slot, preset: preset || "classic" });
+        }
+      } catch (e) {}
+    }
+
+    function openToneDB() {
+      return new Promise((resolve, reject) => {
+        if (!("indexedDB" in window)) {
+          reject(new Error("IndexedDB unavailable"));
+          return;
+        }
+        const req = indexedDB.open(DB_NAME, 1);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains(STORE_NAME)) {
+            db.createObjectStore(STORE_NAME);
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function saveToneBlobToDB(slot, blob, fileName) {
+      const db = await openToneDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, "readwrite");
+        tx.objectStore(STORE_NAME).put({ blob, fileName }, slot);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+
+    async function getToneFromDB(slot) {
+      try {
+        const db = await openToneDB();
+        return await new Promise((resolve) => {
+          const tx = db.transaction(STORE_NAME, "readonly");
+          const req = tx.objectStore(STORE_NAME).get(slot);
+          req.onsuccess = () => resolve(req.result || null);
+          req.onerror = () => resolve(null);
+        });
+      } catch (e) {
+        return null;
+      }
+    }
+
+    async function deleteToneFromDB(slot) {
+      try {
+        const db = await openToneDB();
+        await new Promise((resolve) => {
+          const tx = db.transaction(STORE_NAME, "readwrite");
+          tx.objectStore(STORE_NAME).delete(slot);
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => resolve();
+        });
+      } catch (e) {}
+    }
+
+    function audioBufferToWavBlob(buffer) {
+      const numChannels = Math.min(buffer.numberOfChannels, 2);
+      const sampleRate = Math.min(buffer.sampleRate, 22050);
+      const maxFrames = Math.floor(MAX_TONE_SECONDS * buffer.sampleRate);
+      const sourceFrames = Math.min(buffer.length, maxFrames);
+      const ratio = buffer.sampleRate / sampleRate;
+      const outFrames = Math.floor(sourceFrames / ratio);
+      const length = outFrames * numChannels * 2;
+      const out = new ArrayBuffer(44 + length);
+      const view = new DataView(out);
+
+      const writeStr = (off, str) => {
+        for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i));
+      };
+
+      writeStr(0, "RIFF");
+      view.setUint32(4, 36 + length, true);
+      writeStr(8, "WAVE");
+      writeStr(12, "fmt ");
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, numChannels, true);
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate * numChannels * 2, true);
+      view.setUint16(32, numChannels * 2, true);
+      view.setUint16(34, 16, true);
+      writeStr(36, "data");
+      view.setUint32(40, length, true);
+
+      let offset = 44;
+      for (let i = 0; i < outFrames; i++) {
+        const srcIdx = Math.min(sourceFrames - 1, Math.floor(i * ratio));
+        for (let ch = 0; ch < numChannels; ch++) {
+          let s = Math.max(-1, Math.min(1, buffer.getChannelData(ch)[srcIdx]));
+          view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+          offset += 2;
+        }
+      }
+      return new Blob([out], { type: "audio/wav" });
+    }
+
+    async function trimAudioFileTo60s(file) {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return file;
+      const ctx = new AudioContextClass();
+      const arrBuf = await file.arrayBuffer();
+      const decoded = await ctx.decodeAudioData(arrBuf);
+      const wavBlob = audioBufferToWavBlob(decoded);
+      if (typeof ctx.close === "function") await ctx.close();
+      return wavBlob;
+    }
+
+    function loadToneSettings() {
+      try {
+        const raw = JSON.parse(localStorage.getItem(TONE_SETTINGS_KEY) || "{}");
+        return {
+          deadline: { ...defaultToneSettings.deadline, ...(raw.deadline || {}) },
+          prep: { ...defaultToneSettings.prep, ...(raw.prep || {}) },
+          notification: { ...defaultToneSettings.notification, ...(raw.notification || {}) }
+        };
+      } catch (e) {
+        return { ...defaultToneSettings };
+      }
+    }
+
+    function saveToneSettings() {
+      try {
+        localStorage.setItem(TONE_SETTINGS_KEY, JSON.stringify(toneSettings));
+      } catch (e) {}
+    }
+
+    async function hydrateCustomTones() {
+      for (const slot of ["deadline", "prep", "notification"]) {
+        if (customToneUrls[slot]) {
+          URL.revokeObjectURL(customToneUrls[slot]);
+          customToneUrls[slot] = null;
+        }
+        const saved = await getToneFromDB(slot);
+        if (saved && saved.blob) {
+          customToneUrls[slot] = URL.createObjectURL(saved.blob);
+          toneSettings[slot].customName = saved.fileName || toneSettings[slot].customName || "ملف صوتي (60s)";
+          await syncNativeTone(slot, saved.blob, toneSettings[slot].preset);
+        } else {
+          await syncNativeTone(slot, null, toneSettings[slot].preset);
+        }
+      }
+      syncToneUI();
+    }
+
+    function syncToneUI() {
+      const dSelect = document.getElementById("deadlineToneSelect");
+      const pSelect = document.getElementById("prepToneSelect");
+      const nSelect = document.getElementById("notificationToneSelect");
+      if (dSelect) dSelect.value = toneSettings.deadline.preset;
+      if (pSelect) pSelect.value = toneSettings.prep.preset;
+      if (nSelect) nSelect.value = toneSettings.notification.preset;
+
+      const dLabel = document.getElementById("deadlineFileLabel");
+      const pLabel = document.getElementById("prepFileLabel");
+      const nLabel = document.getElementById("notificationFileLabel");
+      if (dLabel) dLabel.textContent = toneSettings.deadline.customName ? `ملف: ${toneSettings.deadline.customName}` : "نغمة جاهزة";
+      if (pLabel) pLabel.textContent = toneSettings.prep.customName ? `ملف: ${toneSettings.prep.customName}` : "نغمة جاهزة";
+      if (nLabel) nLabel.textContent = toneSettings.notification.customName ? `ملف: ${toneSettings.notification.customName}` : "نغمة جاهزة";
+    }
+
+    function toggleRingtoneDrawer() {
+      const drawer = document.getElementById("ringtoneDrawer");
+      const arrow = document.getElementById("ringtoneArrow");
+      if (!drawer) return;
+      const isOpen = drawer.classList.toggle("open");
+      if (arrow) arrow.textContent = isOpen ? "▲" : "▼";
+    }
+
+    async function updatePresetTone(slot, presetValue) {
+      toneSettings[slot].preset = presetValue;
+      saveToneSettings();
+      const saved = await getToneFromDB(slot);
+      await syncNativeTone(slot, saved && saved.blob ? saved.blob : null, presetValue);
+    }
+
+    function pickAudioFile(slot) {
+      activePickSlot = slot;
+      const input = document.getElementById("audioFileInput");
+      if (!input) return;
+      input.value = "";
+      input.click();
+    }
+
+    async function clearCustomAudio(slot) {
+      toneSettings[slot].customName = "";
+      if (customToneUrls[slot]) {
+        URL.revokeObjectURL(customToneUrls[slot]);
+        customToneUrls[slot] = null;
+      }
+      await deleteToneFromDB(slot);
+      await syncNativeTone(slot, null, toneSettings[slot].preset);
+      saveToneSettings();
+      syncToneUI();
+    }
+
+    document.getElementById("audioFileInput").addEventListener("change", async function (e) {
+      const file = e.target.files && e.target.files[0];
+      const slot = activePickSlot;
+      if (!file || !slot) return;
+
+      try {
+        const trimmedBlob = await trimAudioFileTo60s(file);
+        await saveToneBlobToDB(slot, trimmedBlob, `${file.name} (60s)`);
+        await syncNativeTone(slot, trimmedBlob, toneSettings[slot].preset);
+        if (customToneUrls[slot]) {
+          URL.revokeObjectURL(customToneUrls[slot]);
+        }
+        customToneUrls[slot] = URL.createObjectURL(trimmedBlob);
+        toneSettings[slot].customName = `${file.name} (60s)`;
+        saveToneSettings();
+        syncToneUI();
+        previewSlotTone(slot);
+      } catch (err) {
+        try {
+          await saveToneBlobToDB(slot, file, file.name);
+          await syncNativeTone(slot, file, toneSettings[slot].preset);
+          if (customToneUrls[slot]) {
+            URL.revokeObjectURL(customToneUrls[slot]);
+          }
+          customToneUrls[slot] = URL.createObjectURL(file);
+          toneSettings[slot].customName = file.name;
+          saveToneSettings();
+          syncToneUI();
+          previewSlotTone(slot);
+        } catch (e2) {
+          alert("تعذر قراءة أو حفظ ملف الصوت؛ جرّب ملفاً بصيغة MP3 أو WAV.");
+        }
+      }
+    });
+
+    window.StudyPartnerAlarm = {
+      getLocalNotificationsPlugin() {
+        try {
+          const cap = window.Capacitor;
+          if (!cap || !cap.Plugins || !cap.Plugins.LocalNotifications) return null;
+          if (typeof cap.isNativePlatform === "function" && !cap.isNativePlatform()) return null;
+          return cap.Plugins.LocalNotifications;
+        } catch (e) {
+          return null;
+        }
+      },
+
+      async ensureChannel() {
+        const LN = this.getLocalNotificationsPlugin();
+        if (!LN || typeof LN.createChannel !== "function") return;
+        try {
+          await LN.createChannel({
+            id: CHANNEL_ID,
+            name: "Study Partner Alarms",
+            description: "تنبيهات البدء المبكر ومواعيد التسليم والكويزات والمشاريع",
+            importance: 5,
+            sound: "default",
+            vibration: true
+          });
+        } catch (e) {}
+      },
+
+      async requestPermission() {
+        try {
+          const LN = this.getLocalNotificationsPlugin();
+          if (LN && typeof LN.requestPermissions === "function") {
+            const current = typeof LN.checkPermissions === "function" ? await LN.checkPermissions() : null;
+            if (!current || current.display !== "granted") {
+              await LN.requestPermissions();
+            }
+            await this.ensureChannel();
+          } else if ("Notification" in window && Notification.permission === "default") {
+            await Notification.requestPermission();
+          }
+          await refreshExactAlarmBanner();
+          return true;
+        } catch (e) {
+          await refreshExactAlarmBanner();
+          return false;
+        }
+      },
+
+      makeNotifId(taskId, suffix) {
+        const base = Math.abs(Number(taskId) || Date.now()) % 200000000;
+        return base * 10 + (suffix === "deadline" ? 2 : 1);
+      },
+
+      async scheduleSingle(notifId, title, body, targetTs, kind) {
+        if (!targetTs || targetTs <= Date.now()) return false;
+        const bridge = getNativeBridge();
+        if (bridge && typeof bridge.scheduleExactAlarm === "function") {
+          try {
+            await bridge.scheduleExactAlarm({
+              id: notifId,
+              title: title || "Study Partner",
+              body: body || "حان وقت المذاكرة!",
+              triggerAt: targetTs,
+              slot: kind || "notification"
+            });
+          } catch (e) {}
+        }
+        return true;
+      },
+
+      async scheduleTaskNotifications(task) {
+        if (!task || task.done) return;
+        try {
+          await this.requestPermission();
+          await this.cancelTaskNotifications(task.id);
+
+          const now = Date.now();
+          if (!task.prepTriggered && task.prepTime && task.prepTime > now) {
+            await this.scheduleSingle(
+              this.makeNotifId(task.id, "prep"),
+              `حان وقت البدء: ${task.title}`,
+              `تنبيه مبكر قبل الـ Deadline (${formatDateTime(task.deadline)}) للبدء الآن.`,
+              task.prepTime,
+              "prep"
+            );
+          }
+
+          if (!task.deadlineTriggered && task.deadline && task.deadline > now) {
+            await this.scheduleSingle(
+              this.makeNotifId(task.id, "deadline"),
+              `يوم الـ Deadline: ${task.title}`,
+              `وصل موعد التسليم/الكويز/المشروع (${formatDateTime(task.deadline)}).`,
+              task.deadline,
+              "deadline"
+            );
+          }
+        } catch (e) {}
+      },
+
+      async cancelTaskNotifications(taskId) {
+        const bridge = getNativeBridge();
+        if (bridge && typeof bridge.cancelExactAlarm === "function") {
+          try {
+            await bridge.cancelExactAlarm({ id: this.makeNotifId(taskId, "prep") });
+            await bridge.cancelExactAlarm({ id: this.makeNotifId(taskId, "deadline") });
+          } catch (e) {}
+        }
+      },
+
+      async bindActionListener() {
+        const LN = this.getLocalNotificationsPlugin();
+        if (!LN || typeof LN.addListener !== "function") return;
+        try {
+          await LN.addListener("localNotificationActionPerformed", (event) => {
+            const notif = event && event.notification;
+            const kind = (notif && notif.extra && notif.extra.kind) || "notification";
+            triggerAlarm(
+              (notif && notif.title) || "تنبيه من Study Partner",
+              (notif && notif.body) || "حان وقت المذاكرة!",
+              kind
+            );
+          });
+        } catch (e) {}
+      }
+    };
+
+    function saveTasks() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+      } catch (e) {}
+    }
+
+    function toggleTheme() {
+      document.body.classList.toggle("light");
+    }
+
+    function setFilter(filter) {
+      currentFilter = filter;
+      renderTasks();
+    }
+
+    function formatDateTime(ts) {
+      return new Date(ts).toLocaleString("ar-EG", {
+        dateStyle: "medium",
+        timeStyle: "short"
+      });
+    }
+
+    function formatRemaining(ms) {
+      if (ms <= 0) return "انتهى الوقت أو حان الموعد الآن!";
+      const totalSec = Math.floor(ms / 1000);
+      const days = Math.floor(totalSec / 86400);
+      const hours = Math.floor((totalSec % 86400) / 3600);
+      const mins = Math.floor((totalSec % 3600) / 60);
+      const secs = totalSec % 60;
+      return `${days}ي : ${hours}س : ${mins}د : ${secs}ث`;
+    }
+
+    function playToneNote(freq, startOffset, duration, type = "sine", volume = 0.25) {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      const now = audioCtx.currentTime + startOffset;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, now);
+      gain.gain.setValueAtTime(volume, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(now);
+      osc.stop(now + duration);
+    }
+
+    function playPresetTone(mode = "classic") {
+      try {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioCtx.state === "suspended") {
+          audioCtx.resume();
+        }
+
+        if (mode === "soft") {
+          playToneNote(523.25, 0, 0.24, "sine", 0.2);
+          playToneNote(659.25, 0.26, 0.28, "sine", 0.2);
+        } else if (mode === "urgent") {
+          playToneNote(987.77, 0, 0.2, "square", 0.22);
+          playToneNote(783.99, 0.22, 0.2, "square", 0.22);
+          playToneNote(987.77, 0.44, 0.2, "square", 0.22);
+        } else {
+          playToneNote(880, 0, 0.22, "triangle", 0.25);
+          playToneNote(880, 0.3, 0.22, "triangle", 0.25);
+        }
+      } catch (e) {}
+    }
+
+    function clearToneStopTimer() {
+      if (toneStopTimer) {
+        clearTimeout(toneStopTimer);
+        toneStopTimer = null;
+      }
+    }
+
+    function playSlotOnce(slot = "notification") {
+      const cfg = toneSettings[slot] || toneSettings.notification;
+      const customUrl = customToneUrls[slot];
+      if (customUrl) {
+        try {
+          if (customAudioPlayer) {
+            customAudioPlayer.pause();
+          }
+          customAudioPlayer = new Audio(customUrl);
+          customAudioPlayer.currentTime = 0;
+          customAudioPlayer.play().catch(() => {
+            playPresetTone(cfg.preset);
+          });
+          return;
+        } catch (e) {}
+      }
+      playPresetTone((cfg && cfg.preset) || "classic");
+    }
+
+    function triggerAlarm(title, body, slot = "deadline") {
+      document.getElementById("alarmTitle").textContent = title;
+      document.getElementById("alarmBody").textContent = body;
+      document.getElementById("alarmModal").classList.add("show");
+      clearInterval(alarmInterval);
+      clearToneStopTimer();
+      playSlotOnce(slot);
+      alarmInterval = setInterval(() => playSlotOnce(slot), 1800);
+      toneStopTimer = setTimeout(() => {
+        stopAlarm();
+      }, MAX_TONE_DURATION_MS);
+    }
+
+    function stopAlarm() {
+      clearToneStopTimer();
+      clearInterval(alarmInterval);
+      alarmInterval = null;
+      if (customAudioPlayer) {
+        try {
+          customAudioPlayer.pause();
+          customAudioPlayer.currentTime = 0;
+        } catch (e) {}
+      }
+      const bridge = getNativeBridge();
+      if (bridge && typeof bridge.stopNativeAlarm === "function") {
+        try { bridge.stopNativeAlarm(); } catch (e) {}
+      }
+      document.getElementById("alarmModal").classList.remove("show");
+    }
+
+    function previewSlotTone(slot) {
+      stopAlarm();
+      playSlotOnce(slot);
+      toneStopTimer = setTimeout(() => {
+        if (customAudioPlayer) {
+          try {
+            customAudioPlayer.pause();
+            customAudioPlayer.currentTime = 0;
+          } catch (e) {}
+        }
+      }, MAX_TONE_DURATION_MS);
+    }
+
+    async function addSampleTasks() {
+      const now = Date.now();
+      const sampleTask = {
+        id: now + Math.floor(Math.random() * 1000),
+        title: "تجربة منبه البدء (مشروع هندسي)",
+        type: "project",
+        deadline: now + 65000,
+        prepTime: now + 10000,
+        prepLabel: "بعد 10 ثوانٍ",
+        notes: "مهمة تجريبية للتأكد من عمل منبه البدء",
+        prepTriggered: false,
+        deadlineTriggered: false,
+        done: false
+      };
+      tasks.push(sampleTask);
+      saveTasks();
+      renderTasks();
+      await window.StudyPartnerAlarm.scheduleTaskNotifications(sampleTask);
+    }
+
+    function getTypeBadge(type) {
+      if (type === "quiz") return `<span class="badge badge-quiz">كويز</span>`;
+      if (type === "project") return `<span class="badge badge-project">مشروع</span>`;
+      return `<span class="badge badge-assignment">تسليمة</span>`;
+    }
+
+    async function handleTaskSubmit(e) {
+      if (e && typeof e.preventDefault === "function") e.preventDefault();
+      const titleInput = document.getElementById("title");
+      const typeSelect = document.getElementById("type");
+      const prepSelect = document.getElementById("prepMinutes");
+      const deadlineInput = document.getElementById("deadline");
+      const notesInput = document.getElementById("notes");
+
+      const title = (titleInput && titleInput.value || "").trim();
+      const type = typeSelect ? typeSelect.value : "assignment";
+      const prepMinutes = prepSelect ? Number(prepSelect.value) : 60;
+      const prepText = prepSelect && prepSelect.options[prepSelect.selectedIndex] ? prepSelect.options[prepSelect.selectedIndex].text : "";
+      const deadlineVal = deadlineInput ? deadlineInput.value : "";
+      const notes = (notesInput && notesInput.value || "").trim();
+
+      if (!title || !deadlineVal) return;
+
+      const deadlineTs = new Date(deadlineVal).getTime();
+      if (Number.isNaN(deadlineTs)) return;
+      const prepTs = deadlineTs - prepMinutes * 60 * 1000;
+
+      const newTask = {
+        id: Date.now(),
+        title,
+        type,
+        deadline: deadlineTs,
+        prepTime: prepTs,
+        prepLabel: prepText,
+        notes,
+        prepTriggered: false,
+        deadlineTriggered: false,
+        done: false
+      };
+
+      tasks.push(newTask);
+      saveTasks();
+      renderTasks();
+
+      const formEl = document.getElementById("taskForm");
+      if (formEl && typeof formEl.reset === "function") formEl.reset();
+
+      await window.StudyPartnerAlarm.scheduleTaskNotifications(newTask);
+    }
+
+    async function toggleDone(id) {
+      let target = null;
+      tasks = tasks.map(t => {
+        if (t.id === id) {
+          target = { ...t, done: !t.done };
+          return target;
+        }
+        return t;
+      });
+      saveTasks();
+      renderTasks();
+
+      if (target) {
+        if (target.done) {
+          await window.StudyPartnerAlarm.cancelTaskNotifications(id);
+        } else {
+          await window.StudyPartnerAlarm.scheduleTaskNotifications(target);
+        }
+      }
+    }
+
+    async function deleteTask(id) {
+      tasks = tasks.filter(t => t.id !== id);
+      saveTasks();
+      renderTasks();
+      await window.StudyPartnerAlarm.cancelTaskNotifications(id);
+    }
+
+    function renderTasks() {
+      const list = document.getElementById("taskList");
+      const countEl = document.getElementById("taskCount");
+      if (!list) return;
+
+      const filtered = tasks.filter(t => {
+        if (currentFilter === "assignment") return t.type === "assignment" && !t.done;
+        if (currentFilter === "quiz") return t.type === "quiz" && !t.done;
+        if (currentFilter === "project") return t.type === "project" && !t.done;
+        if (currentFilter === "done") return t.done;
+        return true;
+      });
+
+      if (countEl) countEl.textContent = `${filtered.length} عنصر`;
+
+      if (!filtered.length) {
+        list.innerHTML = `<div class="empty">لا توجد مواعيد مطابقة للفلتر الحالي.</div>`;
+        return;
+      }
+
+      const now = Date.now();
+      list.innerHTML = filtered
+        .sort((a, b) => a.deadline - b.deadline)
+        .map(t => {
+          const diff = t.deadline - now;
+          const isUrgent = !t.done && diff <= 24 * 60 * 60 * 1000;
+          return `
+            <div class="task-item ${t.type} ${isUrgent ? "urgent" : ""} ${t.done ? "done" : ""}">
+              <div class="task-top">
+                <div>
+                  ${getTypeBadge(t.type)}
+                  <strong style="font-size:1.05rem;">${t.title}</strong>
+                </div>
+              </div>
+              <div class="countdown ${isUrgent ? "urgent" : ""}">${t.done ? "تم الإنجاز ✓" : formatRemaining(diff)}</div>
+              <div class="meta">
+                <div><strong>الـ Deadline:</strong> ${formatDateTime(t.deadline)}</div>
+                <div><strong>تنبيه البدء:</strong> ${formatDateTime(t.prepTime)} (${t.prepLabel})</div>
+                ${t.notes ? `<div><strong>ملاحظات:</strong> ${t.notes}</div>` : ""}
+              </div>
+              <div class="task-actions">
+                <button type="button" class="btn-success" onclick="toggleDone(${t.id})">${t.done ? "إعادة فتح" : "تم التسليم / الأداء"}</button>
+                <button type="button" class="btn-danger" onclick="deleteTask(${t.id})">حذف</button>
+              </div>
+            </div>
+          `;
+        })
+        .join("");
+    }
+
+    setInterval(() => {
+      const now = Date.now();
+      let changed = false;
+
+      tasks.forEach(t => {
+        if (t.done) return;
+
+        if (!t.prepTriggered && now >= t.prepTime) {
+          t.prepTriggered = true;
+          changed = true;
+          triggerAlarm(
+            `حان وقت البدء: ${t.title}`,
+            `تنبيه مبكر قبل الـ Deadline (${formatDateTime(t.deadline)}) حتى تبدأ في التنفيذ الآن.`,
+            "prep"
+          );
+        } else if (!t.deadlineTriggered && now >= t.deadline) {
+          t.deadlineTriggered = true;
+          changed = true;
+          triggerAlarm(
+            `يوم الـ Deadline: ${t.title}`,
+            `وصل موعد التسليم/الكويز/المشروع المحدد (${formatDateTime(t.deadline)}).`,
+            "deadline"
+          );
+        }
+      });
+
+      if (changed) saveTasks();
+      renderTasks();
+    }, 1000);
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        refreshExactAlarmBanner();
+      }
+    });
+
+    window.addEventListener("DOMContentLoaded", async () => {
+      syncToneUI();
+      renderTasks();
+      await hydrateCustomTones();
+      await window.StudyPartnerAlarm.requestPermission();
+      await window.StudyPartnerAlarm.bindActionListener();
+      for (const t of tasks) {
+        if (!t.done) {
+          await window.StudyPartnerAlarm.scheduleTaskNotifications(t);
+        }
+      }
+    });
+
+    syncToneUI();
+    renderTasks();
+  </script>
+</body>
+</html>

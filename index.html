@@ -794,11 +794,10 @@
 
     function audioBufferToWavBlob(buffer) {
       const numChannels = Math.min(buffer.numberOfChannels, 2);
-      const sampleRate = Math.min(buffer.sampleRate, 22050);
-      const maxFrames = Math.floor(MAX_TONE_SECONDS * buffer.sampleRate);
-      const sourceFrames = Math.min(buffer.length, maxFrames);
+      const sampleRate = Math.min(buffer.sampleRate, 44100);
+      const maxFrames = Math.min(buffer.length, Math.floor(MAX_TONE_SECONDS * buffer.sampleRate));
       const ratio = buffer.sampleRate / sampleRate;
-      const outFrames = Math.floor(sourceFrames / ratio);
+      const outFrames = Math.max(1, Math.floor(maxFrames / ratio));
       const length = outFrames * numChannels * 2;
       const out = new ArrayBuffer(44 + length);
       const view = new DataView(out);
@@ -823,9 +822,10 @@
 
       let offset = 44;
       for (let i = 0; i < outFrames; i++) {
-        const srcIdx = Math.min(sourceFrames - 1, Math.floor(i * ratio));
+        const srcIdx = Math.min(maxFrames - 1, Math.floor(i * ratio));
         for (let ch = 0; ch < numChannels; ch++) {
-          let s = Math.max(-1, Math.min(1, buffer.getChannelData(ch)[srcIdx]));
+          const channelData = buffer.getChannelData(Math.min(ch, buffer.numberOfChannels - 1));
+          let s = Math.max(-1, Math.min(1, channelData[srcIdx] || 0));
           view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
           offset += 2;
         }
@@ -837,11 +837,15 @@
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       if (!AudioContextClass) return file;
       const ctx = new AudioContextClass();
-      const arrBuf = await file.arrayBuffer();
-      const decoded = await ctx.decodeAudioData(arrBuf);
-      const wavBlob = audioBufferToWavBlob(decoded);
-      if (typeof ctx.close === "function") await ctx.close();
-      return wavBlob;
+      try {
+        const arrBuf = await file.arrayBuffer();
+        const decoded = await ctx.decodeAudioData(arrBuf);
+        return audioBufferToWavBlob(decoded);
+      } finally {
+        if (typeof ctx.close === "function") {
+          try { await ctx.close(); } catch (e) {}
+        }
+      }
     }
 
     function loadToneSettings() {
@@ -996,6 +1000,11 @@
 
       async requestPermission() {
         try {
+          const bridge = getNativeBridge();
+          if (bridge && typeof bridge.requestNotificationPermission === "function") {
+            try { await bridge.requestNotificationPermission(); } catch (e) {}
+          }
+
           const LN = this.getLocalNotificationsPlugin();
           if (LN && typeof LN.requestPermissions === "function") {
             const current = typeof LN.checkPermissions === "function" ? await LN.checkPermissions() : null;
@@ -1033,6 +1042,23 @@
             });
           } catch (e) {}
         }
+
+        const LN = this.getLocalNotificationsPlugin();
+        if (LN && typeof LN.schedule === "function") {
+          try {
+            await this.ensureChannel();
+            await LN.schedule({
+              notifications: [{
+                id: notifId,
+                title: title || "Study Partner",
+                body: body || "حان وقت المذاكرة!",
+                schedule: { at: new Date(targetTs), allowWhileIdle: true },
+                channelId: CHANNEL_ID,
+                extra: { kind: kind || "notification" }
+              }]
+            });
+          } catch (e) {}
+        }
         return true;
       },
 
@@ -1066,11 +1092,19 @@
       },
 
       async cancelTaskNotifications(taskId) {
+        const prepId = this.makeNotifId(taskId, "prep");
+        const deadlineId = this.makeNotifId(taskId, "deadline");
         const bridge = getNativeBridge();
         if (bridge && typeof bridge.cancelExactAlarm === "function") {
           try {
-            await bridge.cancelExactAlarm({ id: this.makeNotifId(taskId, "prep") });
-            await bridge.cancelExactAlarm({ id: this.makeNotifId(taskId, "deadline") });
+            await bridge.cancelExactAlarm({ id: prepId });
+            await bridge.cancelExactAlarm({ id: deadlineId });
+          } catch (e) {}
+        }
+        const LN = this.getLocalNotificationsPlugin();
+        if (LN && typeof LN.cancel === "function") {
+          try {
+            await LN.cancel({ notifications: [{ id: prepId }, { id: deadlineId }] });
           } catch (e) {}
         }
       },
@@ -1197,7 +1231,10 @@
       clearInterval(alarmInterval);
       clearToneStopTimer();
       playSlotOnce(slot);
-      alarmInterval = setInterval(() => playSlotOnce(slot), 1800);
+      const hasCustom = Boolean(customToneUrls[slot]);
+      if (!hasCustom) {
+        alarmInterval = setInterval(() => playSlotOnce(slot), 1800);
+      }
       toneStopTimer = setTimeout(() => {
         stopAlarm();
       }, MAX_TONE_DURATION_MS);
@@ -1223,7 +1260,13 @@
     function previewSlotTone(slot) {
       stopAlarm();
       playSlotOnce(slot);
+      const hasCustom = Boolean(customToneUrls[slot]);
+      if (!hasCustom) {
+        alarmInterval = setInterval(() => playSlotOnce(slot), 1800);
+      }
       toneStopTimer = setTimeout(() => {
+        clearInterval(alarmInterval);
+        alarmInterval = null;
         if (customAudioPlayer) {
           try {
             customAudioPlayer.pause();

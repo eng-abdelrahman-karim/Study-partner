@@ -83,6 +83,7 @@ jobs:
           import android.os.Handler;
           import android.os.IBinder;
           import android.os.Looper;
+          import android.os.PowerManager;
           import java.io.File;
 
           public class AlarmSoundService extends Service {{
@@ -94,6 +95,7 @@ jobs:
               private static final int NOTIF_ID = 7701;
 
               private MediaPlayer mediaPlayer;
+              private PowerManager.WakeLock wakeLock;
               private final Handler handler = new Handler(Looper.getMainLooper());
               private final Runnable stopRunnable = this::stopAlarmAndService;
 
@@ -103,6 +105,8 @@ jobs:
                       stopAlarmAndService();
                       return START_NOT_STICKY;
                   }}
+
+                  acquireWakeLock();
 
                   String rawTitle = intent != null ? intent.getStringExtra(EXTRA_TITLE) : null;
                   String rawBody = intent != null ? intent.getStringExtra(EXTRA_BODY) : null;
@@ -121,6 +125,27 @@ jobs:
                   return START_NOT_STICKY;
               }}
 
+              private void acquireWakeLock() {{
+                  try {{
+                      if (wakeLock == null || !wakeLock.isHeld()) {{
+                          PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+                          if (pm != null) {{
+                              wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "StudyPartner:AlarmWakeLock");
+                              wakeLock.acquire(65000L);
+                          }}
+                      }}
+                  }} catch (Exception ignored) {{}}
+              }}
+
+              private void releaseWakeLock() {{
+                  try {{
+                      if (wakeLock != null && wakeLock.isHeld()) {{
+                          wakeLock.release();
+                      }}
+                  }} catch (Exception ignored) {{}}
+                  wakeLock = null;
+              }}
+
               private void createChannel() {{
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {{
                       NotificationChannel ch = new NotificationChannel(
@@ -130,6 +155,7 @@ jobs:
                       );
                       ch.setDescription("رنة منبه Study Partner");
                       ch.enableVibration(true);
+                      ch.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
                       NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
                       if (nm != null) nm.createNotificationChannel(ch);
                   }}
@@ -155,8 +181,13 @@ jobs:
                          .setContentText(body)
                          .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
                          .setContentIntent(openPi)
+                         .setFullScreenIntent(openPi, true)
                          .setOngoing(true)
                          .addAction(android.R.drawable.ic_menu_close_clear_cancel, "إيقاف التنبيه", stopPi);
+
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {{
+                      builder.setVisibility(Notification.VISIBILITY_PUBLIC);
+                  }}
 
                   return builder.build();
               }}
@@ -165,7 +196,8 @@ jobs:
                   stopPlayerOnly();
                   try {{
                       File customFile = new File(getFilesDir(), "tone_" + slot + ".wav");
-                      Uri sourceUri = customFile.exists()
+                      boolean hasCustom = customFile.exists() && customFile.length() > 44;
+                      Uri sourceUri = hasCustom
                               ? Uri.fromFile(customFile)
                               : android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_ALARM);
                       if (sourceUri == null) {{
@@ -179,7 +211,12 @@ jobs:
                                   .build());
                       }}
                       mediaPlayer.setDataSource(getApplicationContext(), sourceUri);
-                      mediaPlayer.setLooping(true);
+                      mediaPlayer.setLooping(!hasCustom);
+                      mediaPlayer.setOnCompletionListener(mp -> {{
+                          if (hasCustom) {{
+                              stopAlarmAndService();
+                          }}
+                      }});
                       mediaPlayer.prepare();
                       mediaPlayer.start();
                   }} catch (Exception ignored) {{}}
@@ -198,6 +235,7 @@ jobs:
               private void stopAlarmAndService() {{
                   handler.removeCallbacks(stopRunnable);
                   stopPlayerOnly();
+                  releaseWakeLock();
                   stopForeground(true);
                   stopSelf();
               }}
@@ -206,6 +244,7 @@ jobs:
               public void onDestroy() {{
                   handler.removeCallbacks(stopRunnable);
                   stopPlayerOnly();
+                  releaseWakeLock();
                   super.onDestroy();
               }}
 
@@ -236,13 +275,12 @@ jobs:
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {{
                       setShowWhenLocked(true);
                       setTurnScreenOn(true);
-                  }} else {{
-                      getWindow().addFlags(
-                          WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
-                          WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
-                      );
                   }}
-                  getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                  getWindow().addFlags(
+                      WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
+                      WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON |
+                      WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                  );
 
                   String title = getIntent().getStringExtra(AlarmSoundService.EXTRA_TITLE);
                   String body = getIntent().getStringExtra(AlarmSoundService.EXTRA_BODY);
@@ -325,6 +363,7 @@ jobs:
 
           bridge_code = f"""package {pkg_name};
 
+          import android.app.Activity;
           import android.app.AlarmManager;
           import android.app.PendingIntent;
           import android.content.Context;
@@ -333,6 +372,7 @@ jobs:
           import android.os.Build;
           import android.provider.Settings;
           import android.util.Base64;
+          import androidx.core.app.ActivityCompat;
           import com.getcapacitor.JSObject;
           import com.getcapacitor.Plugin;
           import com.getcapacitor.PluginCall;
@@ -343,6 +383,23 @@ jobs:
 
           @CapacitorPlugin(name = "AlarmBridge")
           public class AlarmBridgePlugin extends Plugin {{
+
+              @PluginMethod
+              public void requestNotificationPermission(PluginCall call) {{
+                  try {{
+                      if (Build.VERSION.SDK_INT >= 33) {{
+                          Activity act = getActivity();
+                          if (act != null) {{
+                              ActivityCompat.requestPermissions(
+                                      act,
+                                      new String[]{{android.Manifest.permission.POST_NOTIFICATIONS}},
+                                      7710
+                              );
+                          }}
+                      }}
+                  }} catch (Exception ignored) {{}}
+                  call.resolve();
+              }}
 
               @PluginMethod
               public void saveToneFile(PluginCall call) {{
@@ -450,7 +507,12 @@ jobs:
                       int flags = PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0);
                       PendingIntent pi = PendingIntent.getBroadcast(ctx, id, intent, flags);
 
-                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {{
+                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {{
+                          Intent showIntent = new Intent(ctx, MainActivity.class);
+                          showIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                          PendingIntent showPi = PendingIntent.getActivity(ctx, id + 500000, showIntent, flags);
+                          am.setAlarmClock(new AlarmManager.AlarmClockInfo(triggerAt, showPi), pi);
+                      }} else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {{
                           am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi);
                       }} else {{
                           am.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pi);

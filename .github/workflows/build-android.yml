@@ -104,12 +104,13 @@ jobs:
                       return START_NOT_STICKY;
                   }}
 
-                  String title = (intent != null && intent.getStringExtra(EXTRA_TITLE)) != null
-                          ? intent.getStringExtra(EXTRA_TITLE) : "تنبيه من Study Partner";
-                  String body = (intent != null && intent.getStringExtra(EXTRA_BODY)) != null
-                          ? intent.getStringExtra(EXTRA_BODY) : "حان وقت المذاكرة!";
-                  String slot = (intent != null && intent.getStringExtra(EXTRA_SLOT)) != null
-                          ? intent.getStringExtra(EXTRA_SLOT) : "deadline";
+                  String rawTitle = intent != null ? intent.getStringExtra(EXTRA_TITLE) : null;
+                  String rawBody = intent != null ? intent.getStringExtra(EXTRA_BODY) : null;
+                  String rawSlot = intent != null ? intent.getStringExtra(EXTRA_SLOT) : null;
+
+                  String title = rawTitle != null ? rawTitle : "تنبيه من Study Partner";
+                  String body = rawBody != null ? rawBody : "حان وقت المذاكرة!";
+                  String slot = rawSlot != null ? rawSlot : "deadline";
 
                   createChannel();
                   startForeground(NOTIF_ID, buildNotification(title, body, slot));

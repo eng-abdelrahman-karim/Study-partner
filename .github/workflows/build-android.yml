@@ -39,24 +39,494 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
-      - name: Add Android permissions
+      - name: Configure native alarm manager, custom tones, and service
         run: |
           python3 -c '
-          p = "android/app/src/main/AndroidManifest.xml"
-          s = open(p, encoding="utf-8").read()
+          import os, re
+
+          manifest_path = "android/app/src/main/AndroidManifest.xml"
+          s = open(manifest_path, encoding="utf-8").read()
+
           perms = [
               "<uses-permission android:name=\"android.permission.POST_NOTIFICATIONS\" />",
               "<uses-permission android:name=\"android.permission.SCHEDULE_EXACT_ALARM\" />",
               "<uses-permission android:name=\"android.permission.USE_EXACT_ALARM\" />",
               "<uses-permission android:name=\"android.permission.WAKE_LOCK\" />",
               "<uses-permission android:name=\"android.permission.USE_FULL_SCREEN_INTENT\" />",
+              "<uses-permission android:name=\"android.permission.FOREGROUND_SERVICE\" />",
+              "<uses-permission android:name=\"android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK\" />",
               "<uses-permission android:name=\"android.permission.READ_MEDIA_AUDIO\" />",
               "<uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\" />"
           ]
           for perm in perms:
               if perm not in s:
                   s = s.replace("<application", perm + "\n    <application", 1)
-          open(p, "w", encoding="utf-8").write(s)
+
+          pkg_match = re.search(r"package=\"([^\"]+)\"", s)
+          pkg_name = pkg_match.group(1) if pkg_match else "com.studypartner.app"
+          java_dir = os.path.join("android/app/src/main/java", *pkg_name.split("."))
+          os.makedirs(java_dir, exist_ok=True)
+
+          service_code = f"""package {pkg_name};
+
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.app.Service;
+import android.content.Intent;
+import android.media.AudioAttributes;
+import android.media.MediaPlayer;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Handler;
+import android.os.IBinder;
+import android.os.Looper;
+import java.io.File;
+
+public class AlarmSoundService extends Service {{
+    public static final String ACTION_STOP = "{pkg_name}.ACTION_STOP_ALARM";
+    public static final String EXTRA_TITLE = "alarm_title";
+    public static final String EXTRA_BODY = "alarm_body";
+    public static final String EXTRA_SLOT = "alarm_slot";
+    private static final String CHANNEL_ID = "study_partner_ring_service_v1";
+    private static final int NOTIF_ID = 7701;
+
+    private MediaPlayer mediaPlayer;
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Runnable stopRunnable = this::stopAlarmAndService;
+
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {{
+        if (intent != null && ACTION_STOP.equals(intent.getAction())) {{
+            stopAlarmAndService();
+            return START_NOT_STICKY;
+        }}
+
+        String title = (intent != null && intent.getStringExtra(EXTRA_TITLE)) != null
+                ? intent.getStringExtra(EXTRA_TITLE) : "تنبيه من Study Partner";
+        String body = (intent != null && intent.getStringExtra(EXTRA_BODY)) != null
+                ? intent.getStringExtra(EXTRA_BODY) : "حان وقت المذاكرة!";
+        String slot = (intent != null && intent.getStringExtra(EXTRA_SLOT)) != null
+                ? intent.getStringExtra(EXTRA_SLOT) : "deadline";
+
+        createChannel();
+        startForeground(NOTIF_ID, buildNotification(title, body, slot));
+        startCustomOrDefaultAlarm(slot);
+
+        handler.removeCallbacks(stopRunnable);
+        handler.postDelayed(stopRunnable, 60000L);
+        return START_NOT_STICKY;
+    }}
+
+    private void createChannel() {{
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {{
+            NotificationChannel ch = new NotificationChannel(
+                    CHANNEL_ID,
+                    "Study Partner Ringtone",
+                    NotificationManager.IMPORTANCE_HIGH
+            );
+            ch.setDescription("رنة منبه Study Partner");
+            ch.enableVibration(true);
+            NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            if (nm != null) nm.createNotificationChannel(ch);
+        }}
+    }}
+
+    private Notification buildNotification(String title, String body, String slot) {{
+        Intent stopIntent = new Intent(this, AlarmSoundService.class).setAction(ACTION_STOP);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0);
+        PendingIntent stopPi = PendingIntent.getService(this, 7702, stopIntent, flags);
+
+        Intent openIntent = new Intent(this, AlarmActivity.class);
+        openIntent.putExtra(EXTRA_TITLE, title);
+        openIntent.putExtra(EXTRA_BODY, body);
+        openIntent.putExtra(EXTRA_SLOT, slot);
+        openIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        PendingIntent openPi = PendingIntent.getActivity(this, 7703, openIntent, flags);
+
+        Notification.Builder builder = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                ? new Notification.Builder(this, CHANNEL_ID)
+                : new Notification.Builder(this);
+
+        builder.setContentTitle(title)
+               .setContentText(body)
+               .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+               .setContentIntent(openPi)
+               .setOngoing(true)
+               .addAction(android.R.drawable.ic_menu_close_clear_cancel, "إيقاف التنبيه", stopPi);
+
+        return builder.build();
+    }}
+
+    private void startCustomOrDefaultAlarm(String slot) {{
+        stopPlayerOnly();
+        try {{
+            File customFile = new File(getFilesDir(), "tone_" + slot + ".wav");
+            Uri sourceUri = customFile.exists()
+                    ? Uri.fromFile(customFile)
+                    : android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_ALARM);
+            if (sourceUri == null) {{
+                sourceUri = android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION);
+            }}
+            mediaPlayer = new MediaPlayer();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {{
+                mediaPlayer.setAudioAttributes(new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build());
+            }}
+            mediaPlayer.setDataSource(getApplicationContext(), sourceUri);
+            mediaPlayer.setLooping(true);
+            mediaPlayer.prepare();
+            mediaPlayer.start();
+        }} catch (Exception ignored) {{}}
+    }}
+
+    private void stopPlayerOnly() {{
+        try {{
+            if (mediaPlayer != null) {{
+                if (mediaPlayer.isPlaying()) mediaPlayer.stop();
+                mediaPlayer.release();
+                mediaPlayer = null;
+            }}
+        }} catch (Exception ignored) {{}}
+    }}
+
+    private void stopAlarmAndService() {{
+        handler.removeCallbacks(stopRunnable);
+        stopPlayerOnly();
+        stopForeground(true);
+        stopSelf();
+    }}
+
+    @Override
+    public void onDestroy() {{
+        handler.removeCallbacks(stopRunnable);
+        stopPlayerOnly();
+        super.onDestroy();
+    }}
+
+    @Override
+    public IBinder onBind(Intent intent) {{
+        return null;
+    }}
+}}
+"""
+
+          activity_code = f"""package {pkg_name};
+
+import android.app.Activity;
+import android.content.Intent;
+import android.os.Build;
+import android.os.Bundle;
+import android.view.Gravity;
+import android.view.WindowManager;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+
+public class AlarmActivity extends Activity {{
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {{
+        super.onCreate(savedInstanceState);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {{
+            setShowWhenLocked(true);
+            setTurnScreenOn(true);
+        }} else {{
+            getWindow().addFlags(
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
+                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+            );
+        }}
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+
+        String title = getIntent().getStringExtra(AlarmSoundService.EXTRA_TITLE);
+        String body = getIntent().getStringExtra(AlarmSoundService.EXTRA_BODY);
+
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setGravity(Gravity.CENTER);
+        layout.setPadding(48, 48, 48, 48);
+        layout.setBackgroundColor(0xFF0F172A);
+
+        TextView titleView = new TextView(this);
+        titleView.setText(title != null ? title : "تنبيه من Study Partner");
+        titleView.setTextColor(0xFFEF4444);
+        titleView.setTextSize(22f);
+        titleView.setGravity(Gravity.CENTER);
+        titleView.setPadding(0, 0, 0, 24);
+
+        TextView bodyView = new TextView(this);
+        bodyView.setText(body != null ? body : "حان وقت المذاكرة!");
+        bodyView.setTextColor(0xFFF8FAFC);
+        bodyView.setTextSize(16f);
+        bodyView.setGravity(Gravity.CENTER);
+        bodyView.setPadding(0, 0, 0, 40);
+
+        Button stopBtn = new Button(this);
+        stopBtn.setText("إيقاف التنبيه");
+        stopBtn.setBackgroundColor(0xFFEF4444);
+        stopBtn.setTextColor(0xFFFFFFFF);
+        stopBtn.setTextSize(18f);
+        stopBtn.setOnClickListener(v -> {{
+            Intent stopIntent = new Intent(this, AlarmSoundService.class).setAction(AlarmSoundService.ACTION_STOP);
+            startService(stopIntent);
+            finish();
+        }});
+
+        layout.addView(titleView);
+        layout.addView(bodyView);
+        layout.addView(stopBtn);
+        setContentView(layout);
+    }}
+}}
+"""
+
+          receiver_code = f"""package {pkg_name};
+
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.os.Build;
+
+public class AlarmReceiver extends BroadcastReceiver {{
+    @Override
+    public void onReceive(Context context, Intent intent) {{
+        String title = intent != null ? intent.getStringExtra(AlarmSoundService.EXTRA_TITLE) : null;
+        String body = intent != null ? intent.getStringExtra(AlarmSoundService.EXTRA_BODY) : null;
+        String slot = intent != null ? intent.getStringExtra(AlarmSoundService.EXTRA_SLOT) : null;
+
+        Intent svc = new Intent(context, AlarmSoundService.class);
+        svc.putExtra(AlarmSoundService.EXTRA_TITLE, title != null ? title : "تنبيه من Study Partner");
+        svc.putExtra(AlarmSoundService.EXTRA_BODY, body != null ? body : "حان وقت المذاكرة!");
+        svc.putExtra(AlarmSoundService.EXTRA_SLOT, slot != null ? slot : "deadline");
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {{
+            context.startForegroundService(svc);
+        }} else {{
+            context.startService(svc);
+        }}
+
+        Intent act = new Intent(context, AlarmActivity.class);
+        act.putExtra(AlarmSoundService.EXTRA_TITLE, title != null ? title : "تنبيه من Study Partner");
+        act.putExtra(AlarmSoundService.EXTRA_BODY, body != null ? body : "حان وقت المذاكرة!");
+        act.putExtra(AlarmSoundService.EXTRA_SLOT, slot != null ? slot : "deadline");
+        act.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        try {{
+            context.startActivity(act);
+        }} catch (Exception ignored) {{}}
+    }}
+}}
+"""
+
+          bridge_code = f"""package {pkg_name};
+
+import android.app.AlarmManager;
+import android.app.PendingIntent;
+import android.content.Context;
+import android.content.Intent;
+import android.net.Uri;
+import android.os.Build;
+import android.provider.Settings;
+import android.util.Base64;
+import com.getcapacitor.JSObject;
+import com.getcapacitor.Plugin;
+import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.CapacitorPlugin;
+import java.io.File;
+import java.io.FileOutputStream;
+
+@CapacitorPlugin(name = "AlarmBridge")
+public class AlarmBridgePlugin extends Plugin {{
+
+    @PluginMethod
+    public void saveToneFile(PluginCall call) {{
+        String slot = call.getString("slot", "notification");
+        String base64 = call.getString("base64", "");
+        if (base64 == null || base64.isEmpty()) {{
+            call.reject("Empty audio data");
+            return;
+        }}
+        try {{
+            byte[] bytes = Base64.decode(base64, Base64.DEFAULT);
+            File outFile = new File(getContext().getFilesDir(), "tone_" + slot + ".wav");
+            try (FileOutputStream fos = new FileOutputStream(outFile, false)) {{
+                fos.write(bytes);
+                fos.flush();
+            }}
+            call.resolve();
+        }} catch (Exception e) {{
+            call.reject("Failed to write tone file", e);
+        }}
+    }}
+
+    @PluginMethod
+    public void clearToneFile(PluginCall call) {{
+        String slot = call.getString("slot", "notification");
+        try {{
+            File outFile = new File(getContext().getFilesDir(), "tone_" + slot + ".wav");
+            if (outFile.exists()) {{
+                //noinspection ResultIgnored
+                outFile.delete();
+            }}
+            call.resolve();
+        }} catch (Exception e) {{
+            call.reject("Failed to delete tone file", e);
+        }}
+    }}
+
+    @PluginMethod
+    public void isExactAlarmAllowed(PluginCall call) {{
+        boolean allowed = true;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {{
+            AlarmManager am = (AlarmManager) getContext().getSystemService(Context.ALARM_SERVICE);
+            allowed = (am == null) || am.canScheduleExactAlarms();
+        }}
+        JSObject ret = new JSObject();
+        ret.put("allowed", allowed);
+        call.resolve(ret);
+    }}
+
+    @PluginMethod
+    public void openExactAlarmSettings(PluginCall call) {{
+        try {{
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {{
+                Intent intent = new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM);
+                intent.setData(Uri.parse("package:" + getContext().getPackageName()));
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(intent);
+            }}
+        }} catch (Exception ignored) {{}}
+        call.resolve();
+    }}
+
+    @PluginMethod
+    public void ensureAlarmPermissions(PluginCall call) {{
+        try {{
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {{
+                AlarmManager am = (AlarmManager) getContext().getSystemService(Context.ALARM_SERVICE);
+                if (am != null && !am.canScheduleExactAlarms()) {{
+                    Intent intent = new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM);
+                    intent.setData(Uri.parse("package:" + getContext().getPackageName()));
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    getContext().startActivity(intent);
+                }}
+            }}
+        }} catch (Exception ignored) {{}}
+        call.resolve();
+    }}
+
+    @PluginMethod
+    public void scheduleExactAlarm(PluginCall call) {{
+        int id = call.getInt("id", 1001);
+        String title = call.getString("title", "تنبيه من Study Partner");
+        String body = call.getString("body", "حان وقت المذاكرة!");
+        String slot = call.getString("slot", "deadline");
+        long triggerAt = call.getLong("triggerAt", 0L);
+
+        if (triggerAt <= System.currentTimeMillis()) {{
+            call.resolve();
+            return;
+        }}
+
+        try {{
+            Context ctx = getContext();
+            AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
+            if (am == null) {{
+                call.resolve();
+                return;
+            }}
+
+            Intent intent = new Intent(ctx, AlarmReceiver.class);
+            intent.putExtra(AlarmSoundService.EXTRA_TITLE, title);
+            intent.putExtra(AlarmSoundService.EXTRA_BODY, body);
+            intent.putExtra(AlarmSoundService.EXTRA_SLOT, slot);
+
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0);
+            PendingIntent pi = PendingIntent.getBroadcast(ctx, id, intent, flags);
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {{
+                Intent showIntent = new Intent(ctx, MainActivity.class);
+                showIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                PendingIntent showPi = PendingIntent.getActivity(ctx, id + 500000, showIntent, flags);
+                am.setAlarmClock(new AlarmManager.AlarmClockInfo(triggerAt, showPi), pi);
+            }} else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {{
+                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi);
+            }} else {{
+                am.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pi);
+            }}
+            call.resolve(new JSObject().put("scheduled", true));
+        }} catch (Exception e) {{
+            call.reject("Failed to schedule alarm", e);
+        }}
+    }}
+
+    @PluginMethod
+    public void cancelExactAlarm(PluginCall call) {{
+        int id = call.getInt("id", 1001);
+        try {{
+            Context ctx = getContext();
+            AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
+            Intent intent = new Intent(ctx, AlarmReceiver.class);
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0);
+            PendingIntent pi = PendingIntent.getBroadcast(ctx, id, intent, flags);
+            if (am != null) am.cancel(pi);
+            pi.cancel();
+        }} catch (Exception ignored) {{}}
+        call.resolve();
+    }}
+
+    @PluginMethod
+    public void stopNativeAlarm(PluginCall call) {{
+        try {{
+            Context ctx = getContext();
+            Intent stopIntent = new Intent(ctx, AlarmSoundService.class).setAction(AlarmSoundService.ACTION_STOP);
+            ctx.startService(stopIntent);
+        }} catch (Exception ignored) {{}}
+        call.resolve();
+    }}
+}}
+"""
+
+          main_activity_path = os.path.join(java_dir, "MainActivity.java")
+          if os.path.exists(main_activity_path):
+              ma = open(main_activity_path, encoding="utf-8").read()
+              if "AlarmBridgePlugin.class" not in ma:
+                  if "Bundle savedInstanceState)" in ma:
+                      ma = re.sub(
+                          r"(super\.onCreate\(savedInstanceState\);\s*)",
+                          r"\1    registerPlugin(AlarmBridgePlugin.class);\n",
+                          ma,
+                          count=1
+                      )
+                  open(main_activity_path, "w", encoding="utf-8").write(ma)
+
+          open(os.path.join(java_dir, "AlarmSoundService.java"), "w", encoding="utf-8").write(service_code)
+          open(os.path.join(java_dir, "AlarmActivity.java"), "w", encoding="utf-8").write(activity_code)
+          open(os.path.join(java_dir, "AlarmReceiver.java"), "w", encoding="utf-8").write(receiver_code)
+          open(os.path.join(java_dir, "AlarmBridgePlugin.java"), "w", encoding="utf-8").write(bridge_code)
+
+          components = """
+        <service
+            android:name=".AlarmSoundService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+        <activity
+            android:name=".AlarmActivity"
+            android:exported="false"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true" />
+        <receiver
+            android:name=".AlarmReceiver"
+            android:exported="false" />
+"""
+          if "AlarmSoundService" not in s and "</application>" in s:
+              s = s.replace("</application>", components + "\n    </application>", 1)
+
+          open(manifest_path, "w", encoding="utf-8").write(s)
           '
 
       - name: Build Debug APK
